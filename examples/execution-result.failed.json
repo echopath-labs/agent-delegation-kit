@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "taskId": "example-failed",
+  "status": "failed",
+  "summary": "Executor process failed.",
+  "baseline": { "gitRoot": "/absolute/path/to/repository", "branch": "feat/example", "headBefore": "0123456789abcdef", "headAfter": "0123456789abcdef", "dirtyPathsBefore": [] },
+  "changedPaths": [],
+  "scope": { "compliant": true, "breaches": [] },
+  "validations": [],
+  "executor": { "reportedStatus": "failed", "exitCode": 1, "signal": null, "summary": "Executor exited unsuccessfully." },
+  "hostAcceptance": { "status": "pending", "eligible": false, "decidedBy": null },
+  "residualRisks": ["Objective was not completed."]
+}

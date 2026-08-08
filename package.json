@@ -1,0 +1,22 @@
+{
+  "name": "agent-delegation-kit",
+  "version": "0.1.0",
+  "description": "Bounded, evidence-driven delegation between AI agents.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "agent-delegation-kit": "./bin/agent-delegation-kit.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "smoke:codex-native": "node --test test/integration/codex-native-smoke.test.mjs",
+    "smoke:codex-direct": "node --test test/integration/codex-direct-provider-smoke.test.mjs",
+    "smoke:codex-router": "node --test test/integration/codex-router-smoke.test.mjs",
+    "validate:package": "node scripts/validate-package.mjs",
+    "check": "npm run validate:package && npm test"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1.0.0",
+  "taskId": "example-blocked",
+  "status": "blocked",
+  "summary": "Executor needs a decision outside the envelope.",
+  "baseline": { "gitRoot": "/absolute/path/to/repository", "branch": "feat/example", "headBefore": "0123456789abcdef", "headAfter": "0123456789abcdef", "dirtyPathsBefore": [] },
+  "changedPaths": [],
+  "scope": { "compliant": true, "breaches": [] },
+  "validations": [],
+  "executor": { "reportedStatus": "blocked", "exitCode": 0, "signal": null, "summary": "License choice requires host authority." },
+  "hostAcceptance": { "status": "pending", "eligible": false, "decidedBy": null },
+  "residualRisks": ["Required decision remains unresolved."]
+}

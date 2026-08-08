@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0.0",
+  "taskId": "example-readme-update",
+  "status": "completed",
+  "summary": "Executor completed the bounded edit; host review is still pending.",
+  "baseline": {
+    "gitRoot": "/absolute/path/to/repository",
+    "branch": "feat/example",
+    "headBefore": "0123456789abcdef",
+    "headAfter": "0123456789abcdef",
+    "dirtyPathsBefore": []
+  },
+  "changedPaths": ["README.md"],
+  "scope": { "compliant": true, "breaches": [] },
+  "validations": [
+    {
+      "id": "tests",
+      "argv": ["npm", "test"],
+      "status": "passed",
+      "exitCode": 0,
+      "output": "tests passed",
+      "reason": null
+    }
+  ],
+  "executor": {
+    "reportedStatus": "completed",
+    "exitCode": 0,
+    "signal": null,
+    "summary": "Requested edit completed."
+  },
+  "hostAcceptance": { "status": "pending", "eligible": true, "decidedBy": null },
+  "residualRisks": []
+}

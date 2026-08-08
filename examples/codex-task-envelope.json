@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0",
+  "taskId": "example-codex-implementation",
+  "objective": "Add one bounded implementation and its focused test.",
+  "expectedOutcome": "The allowlisted source and test files contain the requested change and validation passes.",
+  "repository": {
+    "root": "/absolute/path/to/repository",
+    "workingDirectory": ".",
+    "dirtyTree": { "allow": false, "acknowledgedPaths": [] }
+  },
+  "scope": {
+    "readablePaths": ["README.md", "src/example.mjs", "test/example.test.mjs"],
+    "allowedPaths": ["src/example.mjs", "test/example.test.mjs"],
+    "forbiddenPaths": [".git/**", ".env", ".env.*", "private/**"]
+  },
+  "instructions": ["Implement only the requested behavior.", "Preserve repository conventions."],
+  "constraints": ["Do not commit, push, publish, or modify files outside the allowlist."],
+  "validation": [
+    { "id": "focused-test", "argv": ["node", "--test", "test/example.test.mjs"], "timeoutMs": 120000 }
+  ],
+  "requiredEvidence": ["git_preflight", "changed_paths", "validation_results", "executor_report"],
+  "stopConditions": ["Stop if required context or authority is missing."],
+  "resultFormat": { "schemaVersion": "1.0.0" },
+  "executionProfile": "native-worker",
+  "execution": { "timeoutMs": 900000, "exposureMode": "sanitized" }
+}

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "1.0.0",
+  "taskId": "example-readme-update",
+  "objective": "Add one bounded documentation example.",
+  "expectedOutcome": "README.md contains the requested example and validation passes.",
+  "repository": {
+    "root": "/absolute/path/to/repository",
+    "workingDirectory": ".",
+    "dirtyTree": {
+      "allow": false,
+      "acknowledgedPaths": []
+    }
+  },
+  "scope": {
+    "allowedPaths": ["README.md", "docs/**"],
+    "forbiddenPaths": [".git/**", ".env", ".env.*"]
+  },
+  "instructions": [
+    "Preserve existing repository instructions.",
+    "Make only the requested documentation change."
+  ],
+  "constraints": ["Do not commit or push."],
+  "validation": [
+    {
+      "id": "tests",
+      "argv": ["npm", "test"],
+      "timeoutMs": 120000
+    }
+  ],
+  "requiredEvidence": ["git_preflight", "changed_paths", "validation_results", "executor_report"],
+  "stopConditions": ["Stop if a decision would expand the allowed paths."],
+  "resultFormat": { "schemaVersion": "1.0.0" },
+  "execution": { "timeoutMs": 900000 }
+}

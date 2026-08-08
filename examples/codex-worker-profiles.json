@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.0.0",
+  "profiles": {
+    "native-worker": {
+      "codexCommand": "codex",
+      "codexProfile": "native-worker",
+      "model": "configured-codex-model",
+      "reasoning": "high",
+      "external": false,
+      "environmentAllowlist": []
+    },
+    "direct-responses-worker": {
+      "codexCommand": "codex",
+      "model": "compatible-model-id",
+      "reasoning": "high",
+      "external": true,
+      "environmentAllowlist": ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"],
+      "provider": {
+        "name": "compatible-provider",
+        "baseUrl": "https://provider.example/v1",
+        "wireApi": "responses",
+        "credentialEnv": "COMPATIBLE_PROVIDER_API_KEY"
+      }
+    },
+    "optional-router-worker": {
+      "codexCommand": "codex",
+      "codexProfile": "router-worker",
+      "model": "provider/model-alias",
+      "reasoning": "high",
+      "external": true,
+      "environmentAllowlist": ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"],
+      "router": {
+        "healthUrl": "http://127.0.0.1:10100/healthz",
+        "timeoutMs": 5000
+      }
+    }
+  }
+}

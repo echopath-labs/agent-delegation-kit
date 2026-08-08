@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/echopath-labs/agent-delegation-kit/contracts/codex-worker-result.schema.json",
+  "title": "Codex Delegated Worker Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "taskId",
+    "status",
+    "summary",
+    "changedFiles",
+    "validations",
+    "residualRisks",
+    "blocking"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "taskId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "status": { "type": "string", "enum": ["completed", "blocked", "failed"] },
+    "summary": { "type": "string" },
+    "changedFiles": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "validations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "summary"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["passed", "failed", "not_run"] },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "residualRisks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "blocking": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "type": "string", "minLength": 1 },
+            "message": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    }
+  }
+}

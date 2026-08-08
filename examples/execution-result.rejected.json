@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "taskId": "example-rejected",
+  "status": "rejected",
+  "summary": "Postflight detected a scope breach.",
+  "baseline": { "gitRoot": "/absolute/path/to/repository", "branch": "feat/example", "headBefore": "0123456789abcdef", "headAfter": "0123456789abcdef", "dirtyPathsBefore": [] },
+  "changedPaths": ["README.md", "private.txt"],
+  "scope": { "compliant": false, "breaches": ["private.txt"] },
+  "validations": [
+    { "id": "tests", "argv": ["npm", "test"], "status": "not_run", "exitCode": null, "output": "", "reason": "scope_breach" }
+  ],
+  "executor": { "reportedStatus": "completed", "exitCode": 0, "signal": null, "summary": "Executor reported completion." },
+  "hostAcceptance": { "status": "pending", "eligible": false, "decidedBy": null },
+  "residualRisks": ["Out-of-scope file requires human review and recovery."]
+}

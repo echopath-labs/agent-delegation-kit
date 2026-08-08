@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/echopath-labs/agent-delegation-kit/contracts/host-review-packet.schema.json",
+  "title": "Delegated Work Host Review Packet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "taskId",
+    "lifecycleState",
+    "profile",
+    "executorSelfReport",
+    "hostObserved",
+    "validations",
+    "unresolvedRisks",
+    "metrics",
+    "acceptance"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "taskId": { "type": "string", "minLength": 1 },
+    "lifecycleState": {
+      "enum": ["prepared", "running", "awaiting_review", "correction_requested", "accepted", "rejected", "abandoned", "failed"]
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "fingerprint", "effectiveModel"],
+      "properties": {
+        "name": { "type": "string" },
+        "fingerprint": { "type": "string" },
+        "effectiveModel": { "type": ["string", "null"] }
+      }
+    },
+    "executorSelfReport": { "$ref": "codex-worker-result.schema.json" },
+    "hostObserved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "changedPaths", "scopeBreaches", "candidatePatchSha256", "evidenceAvailable"],
+      "properties": {
+        "baseline": { "type": "string" },
+        "changedPaths": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "scopeBreaches": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "candidatePatchSha256": { "type": ["string", "null"] },
+        "evidenceAvailable": { "type": "boolean" }
+      }
+    },
+    "validations": { "type": "array", "items": { "type": "object" } },
+    "unresolvedRisks": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "metrics": { "type": "object" },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "eligible", "decidedBy"],
+      "properties": {
+        "status": { "enum": ["pending", "accepted", "rejected", "correction_requested", "abandoned"] },
+        "eligible": { "type": "boolean" },
+        "decidedBy": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.0.0",
+  "taskId": "example-codex-task",
+  "lifecycleState": "awaiting_review",
+  "profile": {
+    "name": "native-worker",
+    "fingerprint": "sha256:example-profile-fingerprint",
+    "effectiveModel": "configured-codex-model"
+  },
+  "executorSelfReport": {
+    "schemaVersion": "1.0.0",
+    "taskId": "example-codex-task",
+    "status": "completed",
+    "summary": "Implemented the bounded change and ran the requested check.",
+    "changedFiles": ["src/example.mjs", "test/example.test.mjs"],
+    "validations": [
+      { "id": "focused-test", "status": "passed", "summary": "The focused test passed." }
+    ],
+    "residualRisks": [],
+    "blocking": null
+  },
+  "hostObserved": {
+    "baseline": "example-baseline",
+    "changedPaths": ["src/example.mjs", "test/example.test.mjs"],
+    "scopeBreaches": [],
+    "candidatePatchSha256": "sha256:example-patch-fingerprint",
+    "evidenceAvailable": true
+  },
+  "validations": [
+    { "id": "focused-test", "status": "passed", "exitCode": 0, "summary": "passed" }
+  ],
+  "unresolvedRisks": [],
+  "metrics": {
+    "requestCount": 1,
+    "inputTokens": "unavailable",
+    "outputTokens": "unavailable"
+  },
+  "acceptance": {
+    "status": "pending",
+    "eligible": true,
+    "decidedBy": null
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "agent-delegation-kit",
+  "version": "0.1.0",
+  "description": "Portable contracts and a bounded local adapter for delegating engineering work between AI agents.",
+  "author": {
+    "name": "EchoPath Labs",
+    "url": "https://github.com/echopath-labs"
+  },
+  "homepage": "https://github.com/echopath-labs/agent-delegation-kit",
+  "repository": "https://github.com/echopath-labs/agent-delegation-kit",
+  "license": "MIT",
+  "keywords": [
+    "agent-delegation",
+    "codex",
+    "pi",
+    "workflow",
+    "validation"
+  ]
+}
