@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "1.0.0",
+  "taskId": "example-codex-planned-context",
+  "objective": "Add one bounded Node.js implementation and its focused test.",
+  "expectedOutcome": "The allowlisted source and test files contain the requested change and validation passes.",
+  "repository": {
+    "root": "/absolute/path/to/repository",
+    "workingDirectory": ".",
+    "dirtyTree": { "allow": false, "acknowledgedPaths": [] }
+  },
+  "scope": {
+    "readablePaths": ["package.json"],
+    "discoverablePaths": ["src/**/*.mjs", "test/**/*.mjs"],
+    "allowedPaths": ["src/example.mjs", "test/example.test.mjs"],
+    "forbiddenPaths": [".git/**", ".env", ".env.*", ".codex/**", ".pi/**", "private/**"]
+  },
+  "contextPlanning": {
+    "strategy": "dependency-closure",
+    "seeds": ["src/example.mjs", "test/example.test.mjs"],
+    "analyzers": ["node-esm"],
+    "budget": { "maxFiles": 40, "maxBytes": 500000, "maxDepth": 12 },
+    "readiness": [
+      {
+        "id": "source-syntax",
+        "argv": ["node", "--check", "src/example.mjs"],
+        "timeoutMs": 30000,
+        "acceptableExitCodes": [0]
+      }
+    ]
+  },
+  "instructions": [
+    "Implement only the requested behavior.",
+    "Preserve repository conventions and report context_gap if concrete required context is absent."
+  ],
+  "constraints": ["Do not commit, push, publish, or modify files outside the allowlist."],
+  "validation": [
+    { "id": "focused-test", "argv": ["node", "--test", "test/example.test.mjs"], "timeoutMs": 120000 }
+  ],
+  "requiredEvidence": ["git_preflight", "changed_paths", "validation_results", "executor_report"],
+  "stopConditions": ["Stop rather than widening context, authority, route, or exposure mode."],
+  "resultFormat": { "schemaVersion": "1.0.0" },
+  "executionProfile": "native-worker",
+  "execution": { "timeoutMs": 900000, "exposureMode": "sanitized" }
+}

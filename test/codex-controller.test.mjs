@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import {
   correctCodexDelegation,
   executeCodexDelegation,
@@ -10,6 +12,8 @@ import {
   prepareCodexDelegation
 } from "../src/codex/controller.mjs";
 import { createGitRepository, makeEnvelope } from "./helpers.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const profileRegistry = {
   schemaVersion: "1.0.0",
@@ -65,12 +69,143 @@ async function preparedFixture() {
   return prepareCodexDelegation({ envelope, profileRegistry, stateRoot, hostInstanceId: "desktop-host-1" }, { compatibilityProcess });
 }
 
+async function plannedFixture(readiness = []) {
+  const root = await createGitRepository();
+  await mkdir(path.join(root, "src"));
+  await writeFile(path.join(root, "src", "entry.mjs"), "import './dependency.mjs';\n");
+  await writeFile(path.join(root, "src", "dependency.mjs"), "export const value = true;\n");
+  await execFileAsync("git", ["add", "src"], { cwd: root });
+  await execFileAsync("git", ["commit", "-m", "test: add planner fixture"], { cwd: root });
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-controller-planned-"));
+  const envelope = makeEnvelope(root, {
+    executionProfile: "worker",
+    scope: {
+      allowedPaths: ["src/**/*.mjs"],
+      forbiddenPaths: [".env", ".env.*", "private/**"],
+      discoverablePaths: ["src/**/*.mjs"]
+    },
+    contextPlanning: {
+      strategy: "dependency-closure",
+      seeds: ["src/entry.mjs"],
+      analyzers: ["node-esm"],
+      budget: { maxFiles: 10, maxBytes: 10_000, maxDepth: 5 },
+      readiness
+    }
+  });
+  return { root, stateRoot, envelope };
+}
+
 test("controller preflights profile, compatibility, repository, and capsule before execution", async () => {
   const prepared = await preparedFixture();
   assert.equal(prepared.compatibility.version, "0.147.0");
   assert.equal(prepared.router.checked, false);
   assert.equal(prepared.profile.name, "worker");
   assert.equal(prepared.capsule.mode, "sanitized");
+});
+
+test("controller plans context, runs readiness in a minimized environment, and reloads the identity", async () => {
+  const fixture = await plannedFixture([{
+    id: "node-version",
+    argv: [process.execPath, "--version"],
+    timeoutMs: 1000,
+    acceptableExitCodes: [0]
+  }]);
+  let readinessCalls = 0;
+  const prepared = await prepareCodexDelegation({
+    envelope: fixture.envelope,
+    profileRegistry,
+    stateRoot: fixture.stateRoot,
+    hostInstanceId: "desktop-host-1"
+  }, {
+    compatibilityProcess,
+    environment: { PATH: process.env.PATH, PRIVATE_TOKEN: "must-not-pass" },
+    readinessProcess: async (_command, _args, options) => {
+      readinessCalls += 1;
+      assert.equal(options.env.PRIVATE_TOKEN, undefined);
+      assert.match(options.env.HOME, /readiness-home$/);
+      return { exitCode: 0, signal: null, timedOut: false, stdout: "ready", stderr: "" };
+    }
+  });
+  assert.equal(readinessCalls, 1);
+  assert.equal(prepared.readiness.outcome, "passed");
+  assert.match(prepared.capsule.contextManifestFingerprint, /^sha256:/);
+  const state = JSON.parse(await readFile(prepared.statePath, "utf8"));
+  assert.equal(state.contextManifestFingerprint, prepared.capsule.contextManifestFingerprint);
+  const loaded = await loadCodexDelegation(prepared.capsule.taskRoot, profileRegistry);
+  assert.equal(loaded.readiness.outcome, "passed");
+  assert.equal(loaded.capsule.contextManifest.fingerprint, state.contextManifestFingerprint);
+});
+
+test("planning and readiness failures occur before route checks or worker requests and clean provisional state", async () => {
+  const planningFixture = await plannedFixture();
+  await writeFile(path.join(planningFixture.root, "src", "entry.mjs"), "import './missing.mjs';\n");
+  planningFixture.envelope.repository.dirtyTree = { allow: true, acknowledgedPaths: ["src/entry.mjs"] };
+  let compatibilityCalls = 0;
+  await assert.rejects(
+    prepareCodexDelegation({
+      envelope: planningFixture.envelope,
+      profileRegistry,
+      stateRoot: planningFixture.stateRoot,
+      hostInstanceId: "desktop-host-1"
+    }, { compatibilityProcess: async (...args) => { compatibilityCalls += 1; return compatibilityProcess(...args); } }),
+    (error) => error.code === "context_file_missing"
+  );
+  assert.equal(compatibilityCalls, 0);
+  assert.deepEqual(await readdir(planningFixture.stateRoot), []);
+
+  const readinessFixture = await plannedFixture([{
+    id: "structural-check",
+    argv: [process.execPath, "--version"],
+    timeoutMs: 1000,
+    acceptableExitCodes: [0]
+  }]);
+  await assert.rejects(
+    prepareCodexDelegation({
+      envelope: readinessFixture.envelope,
+      profileRegistry,
+      stateRoot: readinessFixture.stateRoot,
+      hostInstanceId: "desktop-host-1"
+    }, {
+      compatibilityProcess: async (...args) => { compatibilityCalls += 1; return compatibilityProcess(...args); },
+      readinessProcess: async () => ({ exitCode: 2, signal: null, timedOut: false, stdout: "not ready", stderr: "" })
+    }),
+    (error) => error.code === "context_readiness_failed" && error.details.workerRequestCount === 0
+  );
+  assert.equal(compatibilityCalls, 0);
+  assert.deepEqual(await readdir(readinessFixture.stateRoot), []);
+});
+
+test("readiness mutation is detected and the provisional capsule is discarded", async () => {
+  const fixture = await plannedFixture([{
+    id: "must-not-mutate",
+    argv: [process.execPath, "--version"],
+    timeoutMs: 1000,
+    acceptableExitCodes: [0]
+  }]);
+  await assert.rejects(
+    prepareCodexDelegation({
+      envelope: fixture.envelope,
+      profileRegistry,
+      stateRoot: fixture.stateRoot,
+      hostInstanceId: "desktop-host-1"
+    }, {
+      compatibilityProcess,
+      readinessProcess: async (_command, _args, options) => {
+        await writeFile(path.join(options.cwd, "readiness-mutation.txt"), "mutation\n");
+        return { exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "" };
+      }
+    }),
+    (error) => error.code === "context_readiness_failed" && error.details.readiness.mutationDetected === true
+  );
+  assert.deepEqual(await readdir(fixture.stateRoot), []);
+});
+
+test("explicit task reload remains compatible when legacy readiness evidence is absent", async () => {
+  const prepared = await preparedFixture();
+  await rm(path.join(prepared.capsule.controlRoot, "readiness-evidence.json"));
+  const loaded = await loadCodexDelegation(prepared.capsule.taskRoot, profileRegistry);
+  assert.equal(loaded.readiness.outcome, "not_configured");
+  assert.equal(loaded.capsule.inputMetadata.length, 1);
 });
 
 test("controller executes and resumes correction in the same delegated session", async () => {
@@ -99,6 +234,62 @@ test("controller executes and resumes correction in the same delegated session",
   assert.equal(corrected.state.lifecycleState, "awaiting_review");
   assert.equal(corrected.state.executorThreadId, "delegated-thread-1");
   assert.equal(corrected.state.correctionSequence, 1);
+});
+
+test("planned correction requires the unchanged manifest identity before any route or worker call", async () => {
+  const fixture = await plannedFixture();
+  const prepared = await prepareCodexDelegation({
+    envelope: fixture.envelope,
+    profileRegistry,
+    stateRoot: fixture.stateRoot,
+    hostInstanceId: "desktop-host-1"
+  }, { compatibilityProcess });
+  const first = await executeCodexDelegation(prepared, {
+    codexHome: path.join(prepared.capsule.taskRoot, "codex-home"),
+    runProcess: workerProcess(),
+    readResultFile: async () => JSON.stringify(result("Planned result"))
+  });
+  const identity = {
+    taskId: prepared.envelope.taskId,
+    profileFingerprint: prepared.profile.fingerprint,
+    capsuleBaseline: prepared.capsule.baseline,
+    contextManifestFingerprint: prepared.capsule.contextManifestFingerprint,
+    priorResultIdentity: first.state.resultIdentity,
+    prompt: "Fix the planned task."
+  };
+  let compatibilityCalls = 0;
+  let workerCalls = 0;
+  const correctionOptions = {
+    compatibilityProcess: async (...args) => { compatibilityCalls += 1; return compatibilityProcess(...args); },
+    codexHome: path.join(prepared.capsule.taskRoot, "codex-home"),
+    runProcess: async (...args) => { workerCalls += 1; return workerProcess()(...args); },
+    readResultFile: async () => JSON.stringify(result("Corrected planned result"))
+  };
+  const { contextManifestFingerprint: omitted, ...missingIdentity } = identity;
+  void omitted;
+  await assert.rejects(
+    correctCodexDelegation(prepared, missingIdentity, correctionOptions),
+    (error) => error.code === "resume_identity_mismatch" && /contextManifestFingerprint/.test(error.message)
+  );
+  await assert.rejects(
+    correctCodexDelegation(prepared, { ...identity, contextManifestFingerprint: "sha256:different" }, correctionOptions),
+    (error) => error.code === "resume_identity_mismatch" && /contextManifestFingerprint/.test(error.message)
+  );
+  const visibleManifestPath = path.join(prepared.capsule.capsuleRoot, ".agent-delegation", "context-manifest.json");
+  const visibleManifest = await readFile(visibleManifestPath, "utf8");
+  const tampered = { ...JSON.parse(visibleManifest), extra: true };
+  await writeFile(visibleManifestPath, `${JSON.stringify(tampered)}\n`);
+  await assert.rejects(
+    correctCodexDelegation(prepared, identity, correctionOptions),
+    (error) => error.code === "context_manifest_mismatch"
+  );
+  assert.equal(compatibilityCalls, 0);
+  assert.equal(workerCalls, 0);
+
+  await writeFile(visibleManifestPath, visibleManifest);
+  const corrected = await correctCodexDelegation(prepared, identity, correctionOptions);
+  assert.equal(corrected.state.correctionSequence, 1);
+  assert.equal(workerCalls, 1);
 });
 
 test("controller fails when delegated identity cannot be separated from the host", async () => {
@@ -147,7 +338,7 @@ test("controller fails closed on router health without creating a capsule or fal
   assert.deepEqual(await readdir(stateRoot), []);
 });
 
-test("controller rejects a missing direct provider credential before capsule mutation", async () => {
+test("controller rejects a missing direct provider credential and cleans provisional state", async () => {
   const root = await createGitRepository();
   const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-controller-direct-missing-"));
   const directRegistry = {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,8 +9,10 @@ import {
   collectCandidateEvidence,
   prepareCapsule,
   preflightCapsule,
+  verifyContextManifestIdentity,
   verifySourceUnchanged
 } from "../src/codex/capsule.mjs";
+import { validateTaskEnvelope } from "../src/envelope.mjs";
 import { resolveRepository } from "../src/git.mjs";
 import { createGitRepository, makeEnvelope } from "./helpers.mjs";
 
@@ -34,12 +36,34 @@ test("sanitized capsule copies only declared readable files and preserves source
   const capsule = await prepareCapsule({ ...fixture, profile, workerResultSchemaPath });
   assert.equal(capsule.mode, "sanitized");
   assert.equal(await readFile(path.join(capsule.capsuleRoot, "README.md"), "utf8"), "# Fixture\n");
+  const executorEnvelope = JSON.parse(await readFile(
+    path.join(capsule.capsuleRoot, ".agent-delegation", "task-envelope.json"),
+    "utf8"
+  ));
+  const canonicalEnvelope = JSON.parse(await readFile(capsule.envelopePath, "utf8"));
+  assert.equal(executorEnvelope.taskId, fixture.envelope.taskId);
   assert.equal(
-    JSON.parse(await readFile(path.join(capsule.capsuleRoot, ".agent-delegation", "task-envelope.json"), "utf8")).taskId,
-    fixture.envelope.taskId
+    path.isAbsolute(executorEnvelope.repository.root) || path.win32.isAbsolute(executorEnvelope.repository.root),
+    true
   );
+  assert.notEqual(executorEnvelope.repository.root, capsule.capsuleRoot);
+  assert.equal(executorEnvelope.repository.workingDirectory, ".");
+  assert.deepEqual(executorEnvelope.repository.dirtyTree, { allow: false, acknowledgedPaths: [] });
+  assert.equal(JSON.stringify(executorEnvelope).includes(fixture.root), false);
+  assert.equal(canonicalEnvelope.repository.root, fixture.root);
+  assert.equal(validateTaskEnvelope(executorEnvelope), executorEnvelope);
   await access(path.join(capsule.capsuleRoot, ".agent-delegation", "codex-worker-result.schema.json"));
   assert.equal((await verifySourceUnchanged(fixture.repository, capsule)).unchanged, true);
+});
+
+test("sanitized capsule refuses source roots retained in free-form executor controls", async () => {
+  const fixture = await setup();
+  fixture.envelope.instructions = [`Inspect source at ${fixture.root}.`];
+  await assert.rejects(
+    prepareCapsule({ ...fixture, profile, workerResultSchemaPath }),
+    (error) => error.code === "unsafe_executor_envelope"
+  );
+  assert.deepEqual(await readdir(fixture.stateRoot), []);
 });
 
 test("sanitized capsule baseline is reproducible for identical inputs", async () => {
@@ -48,6 +72,56 @@ test("sanitized capsule baseline is reproducible for identical inputs", async ()
   const second = await prepareCapsule({ ...fixture, profile, workerResultSchemaPath });
   assert.equal(first.baseline, second.baseline);
   assert.deepEqual(first.inputMetadata, second.inputMetadata);
+});
+
+test("planned capsule copies the deterministic closure and persists one manifest identity", async () => {
+  const fixture = await setup({
+    scope: {
+      allowedPaths: ["src/**/*.mjs"],
+      forbiddenPaths: [".env", ".env.*", "private/**"],
+      readablePaths: ["README.md"],
+      discoverablePaths: ["src/**/*.mjs"]
+    },
+    contextPlanning: {
+      strategy: "dependency-closure",
+      seeds: ["src/entry.mjs"],
+      analyzers: ["node-esm"],
+      budget: { maxFiles: 10, maxBytes: 10_000, maxDepth: 5 },
+      readiness: []
+    }
+  });
+  await mkdir(path.join(fixture.root, "src"));
+  await writeFile(path.join(fixture.root, "src", "entry.mjs"), "import './dependency.mjs';\n");
+  await writeFile(path.join(fixture.root, "src", "dependency.mjs"), "export const value = true;\n");
+
+  const capsule = await prepareCapsule({ ...fixture, profile, workerResultSchemaPath });
+  assert.deepEqual(capsule.inputMetadata.map((item) => item.path), [
+    "README.md",
+    "src/dependency.mjs",
+    "src/entry.mjs"
+  ]);
+  const privateManifest = JSON.parse(await readFile(capsule.contextManifestPath, "utf8"));
+  const visibleManifest = JSON.parse(await readFile(
+    path.join(capsule.capsuleRoot, ".agent-delegation", "context-manifest.json"),
+    "utf8"
+  ));
+  assert.equal(privateManifest.fingerprint, capsule.contextManifestFingerprint);
+  assert.deepEqual(visibleManifest, privateManifest);
+  assert.deepEqual(await verifyContextManifestIdentity(capsule), {
+    verified: true,
+    fingerprint: capsule.contextManifestFingerprint
+  });
+});
+
+test("source verification detects byte changes hidden behind the same dirty path set", async () => {
+  const fixture = await setup();
+  await writeFile(path.join(fixture.root, "README.md"), "# One\n");
+  const capsule = await prepareCapsule({ ...fixture, profile, workerResultSchemaPath });
+  assert.deepEqual(capsule.sourceStatus, ["README.md"]);
+  await writeFile(path.join(fixture.root, "README.md"), "# Two\n");
+  const verification = await verifySourceUnchanged(fixture.repository, capsule);
+  assert.deepEqual(verification.statusPaths, ["README.md"]);
+  assert.equal(verification.unchanged, false);
 });
 
 test("all readable inputs are preflighted before state mutation", async () => {
@@ -71,6 +145,14 @@ test("symlink and private inputs are rejected", async () => {
   await writeFile(path.join(privateFixture.root, ".env"), "SECRET=value\n");
   await assert.rejects(
     preflightCapsule({ ...privateFixture, profile, workerResultSchemaPath }),
+    (error) => error.code === "unsafe_capsule_input"
+  );
+
+  const mixedCasePrivateFixture = await setup({ scope: { readablePaths: [".CoDeX/private.txt"] } });
+  await mkdir(path.join(mixedCasePrivateFixture.root, ".CoDeX"));
+  await writeFile(path.join(mixedCasePrivateFixture.root, ".CoDeX", "private.txt"), "private\n");
+  await assert.rejects(
+    preflightCapsule({ ...mixedCasePrivateFixture, profile, workerResultSchemaPath }),
     (error) => error.code === "unsafe_capsule_input"
   );
 });

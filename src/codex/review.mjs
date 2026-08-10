@@ -17,8 +17,67 @@ function usageValue(usage, ...keys) {
   return undefined;
 }
 
-export function extractAggregateMetrics({ taskId, profile, execution, durationMs }) {
+function boundedRatio(value, maximum) {
+  return Number.isFinite(value) && Number.isFinite(maximum) && maximum > 0
+    ? Math.min(1, Math.max(0, value / maximum))
+    : "unavailable";
+}
+
+function contextPlanEvidence(capsule) {
+  const manifest = capsule.contextManifest;
+  if (!manifest) {
+    return {
+      mode: "explicit",
+      strategy: null,
+      fingerprint: null,
+      selectedFileCount: capsule.inputMetadata?.length ?? 0,
+      selectedBytes: (capsule.inputMetadata ?? []).reduce((sum, item) => sum + (item.bytes ?? 0), 0),
+      unresolvedReferenceCount: 0,
+      budgetUtilization: null
+    };
+  }
+  return {
+    mode: "planned",
+    strategy: manifest.strategy,
+    fingerprint: manifest.fingerprint,
+    selectedFileCount: manifest.totals.selectedFiles,
+    selectedBytes: manifest.totals.selectedBytes,
+    unresolvedReferenceCount: manifest.totals.unresolvedReferences,
+    budgetUtilization: {
+      files: boundedRatio(manifest.totals.selectedFiles, manifest.budget.maxFiles),
+      bytes: boundedRatio(manifest.totals.selectedBytes, manifest.budget.maxBytes),
+      maxDepth: manifest.budget.maxDepth
+    }
+  };
+}
+
+function executorContextGap(workerResult) {
+  if (workerResult.status !== "blocked" || workerResult.blocking?.code !== "context_gap") return null;
+  return {
+    code: "context_gap",
+    message: conciseOutput(workerResult.blocking.message, 1000)
+  };
+}
+
+function contextEvidenceFor(prepared, execution) {
+  return {
+    plan: contextPlanEvidence(prepared.capsule),
+    readiness: prepared.readiness ?? {
+      outcome: "not_configured",
+      commandCount: 0,
+      passedCount: 0,
+      failedCount: 0,
+      mutationDetected: false,
+      commands: []
+    },
+    executorContextGap: executorContextGap(execution.workerResult)
+  };
+}
+
+export function extractAggregateMetrics({ taskId, profile, execution, durationMs, contextEvidence = undefined }) {
   const usage = execution.usage;
+  const plan = contextEvidence?.plan;
+  const readiness = contextEvidence?.readiness;
   return {
     task: opaqueTaskMetricId(taskId),
     profile: profile.fingerprint.slice("sha256:".length, "sha256:".length + 16),
@@ -29,7 +88,19 @@ export function extractAggregateMetrics({ taskId, profile, execution, durationMs
     outputTokens: unavailable(usageValue(usage, "output_tokens", "outputTokens")),
     cachedInputTokens: unavailable(usageValue(usage, "cached_input_tokens", "cachedInputTokens")),
     reasoningTokens: unavailable(usageValue(usage, "reasoning_tokens", "reasoningTokens")),
-    cost: "unavailable"
+    cost: "unavailable",
+    contextMode: plan?.mode === "planned" ? "planned" : "explicit",
+    contextStrategy: plan?.strategy === "dependency-closure" ? "dependency-closure" : plan?.mode === "planned" ? "unavailable" : "explicit",
+    selectedFileCount: unavailable(plan?.selectedFileCount),
+    selectedBytes: unavailable(plan?.selectedBytes),
+    unresolvedReferenceCount: unavailable(plan?.unresolvedReferenceCount),
+    fileBudgetUtilization: unavailable(plan?.budgetUtilization?.files),
+    byteBudgetUtilization: unavailable(plan?.budgetUtilization?.bytes),
+    readinessOutcome: new Set(["not_configured", "passed", "failed"]).has(readiness?.outcome)
+      ? readiness.outcome
+      : "unavailable",
+    contextBlockCategory: contextEvidence?.executorContextGap ? "executor_context_gap" : "none",
+    newTaskRequired: Boolean(contextEvidence?.executorContextGap)
   };
 }
 
@@ -71,7 +142,8 @@ export async function runHostValidations(envelope, capsule, options = {}) {
 }
 
 export async function buildHostReviewPacket(prepared, execution, options = {}) {
-  const [state, evidence, source] = await Promise.all([
+  const contextEvidence = contextEvidenceFor(prepared, execution);
+  let [state, evidence, source] = await Promise.all([
     readTaskState(prepared.statePath),
     collectCandidateEvidence(prepared.capsule, prepared.envelope.scope),
     verifySourceUnchanged(prepared.repository, prepared.capsule)
@@ -89,6 +161,13 @@ export async function buildHostReviewPacket(prepared, execution, options = {}) {
       summary: "Validation was skipped because required postflight evidence was not eligible.",
       reason: "postflight_ineligible"
     }));
+  if (canValidate) {
+    [state, evidence, source] = await Promise.all([
+      readTaskState(prepared.statePath),
+      collectCandidateEvidence(prepared.capsule, prepared.envelope.scope),
+      verifySourceUnchanged(prepared.repository, prepared.capsule)
+    ]);
+  }
   const validationPassed = validations.every((item) => item.status === "passed");
   const unresolvedRisks = [...execution.workerResult.residualRisks];
   if (!evidence.baselineConsistent) unresolvedRisks.push("The task capsule HEAD changed from its host-recorded baseline.");
@@ -107,6 +186,7 @@ export async function buildHostReviewPacket(prepared, execution, options = {}) {
       fingerprint: prepared.profile.fingerprint,
       effectiveModel: prepared.profile.model ?? null
     },
+    contextEvidence,
     executorSelfReport: execution.workerResult,
     hostObserved: {
       baseline: prepared.capsule.baseline,
@@ -121,7 +201,8 @@ export async function buildHostReviewPacket(prepared, execution, options = {}) {
       taskId: prepared.envelope.taskId,
       profile: prepared.profile,
       execution,
-      durationMs: options.durationMs
+      durationMs: options.durationMs,
+      contextEvidence
     }),
     acceptance: { status: "pending", eligible, decidedBy: null }
   };

@@ -35,7 +35,10 @@ environment variables, task-supplied executables, non-loopback routers, and
 silent fallback are rejected. Native/router task homes link existing
 host-managed Codex configuration as before. Direct-provider task homes instead
 materialize a deterministic private base configuration and never inherit global
-Codex authentication or configuration. No route copies credential values into
+Codex authentication or configuration. The direct configuration also declares
+only the exact disposable capsule as a trusted Codex project so Codex does not
+rewrite task identity on first use; correction verifies those exact bytes and
+permissions. No route copies credential values into
 the envelope, configuration, prompt, result, metrics, or public examples.
 
 ## Native, direct, and optional bridge routing
@@ -84,6 +87,21 @@ preflighted before mutation, then only declared files, the envelope, and result
 schema are copied into a deterministic temporary Git repository. Allowed output
 paths may name new files without exposing existing source content.
 
+The canonical envelope stays in private task controls. The capsule receives a
+separate valid executor projection whose repository root points to the capsule,
+not the source checkout. The root is a stable virtual identity for deterministic
+baseline hashing; worker commands still run from the real capsule directory.
+Preparation fails if another projected field would retain the source root.
+
+Sanitized tasks may use either exact explicit context or bounded planned
+context. Planned mode keeps `readablePaths` exact, uses `discoverablePaths` only
+as maximum additional authority, and selects a deterministic Node.js ESM
+dependency closure from literal seeds under explicit file, byte, and depth
+budgets. A credential-free manifest records integrity and provenance. Optional
+readiness commands run in the provisional capsule before credentials, routing,
+lifecycle execution, or worker requests. Planning, readiness, and mutation
+failures clean the provisional task and never broaden exposure automatically.
+
 `trusted-worktree` creates a detached disposable Git worktree and requires
 `execution.trustedWorktreeAcknowledged: true`. It exposes the committed checkout
 and is not an operating-system sandbox. In both modes, the source HEAD/status is
@@ -93,12 +111,19 @@ recorded and checked independently.
 
 `run-codex` leaves a review packet and candidate patch in private task state.
 The packet separates executor claims, host-observed paths/diff fingerprint,
+context-plan identity and aggregates, readiness, executor-reported context gaps,
 host-run validations, unresolved risks, and privacy-safe aggregate metrics.
 Completion remains `pending` even when eligible.
 
+Host validations run only after initial executor evidence is eligible. The
+controller then recollects capsule and source integrity and bases the packet,
+candidate patch, scope breaches, and acceptance eligibility on that final
+post-validation evidence.
+
 Use `correct-codex` only for defects inside the original authority boundary. It
 resumes the exact stored thread when task, profile fingerprint, capsule baseline,
-and prior result identity match. Changed authority requires a new task.
+context-manifest identity when planned, and prior result identity match. Changed
+authority or selected context requires a new task.
 
 The library exports `recordTerminalDecision` for explicit accept, reject, or
 abandon decisions and `archiveAndCleanupTerminalTask` to archive the review

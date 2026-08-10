@@ -39,6 +39,10 @@ switch (scenario) {
     spawnSync("git", ["switch", "-c", "executor-created-branch"], { cwd: process.cwd() });
     result("completed", "Executor changed the branch.");
     break;
+  case "staged-rename":
+    spawnSync("git", ["mv", "outside.txt", "allowed.txt"], { cwd: process.cwd() });
+    result("completed", "Executor staged a rename.");
+    break;
   default:
     result("failed", `Unknown fake scenario: ${scenario}.`);
 }

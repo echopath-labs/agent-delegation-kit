@@ -13,6 +13,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
+    "smoke:pi": "node --test test/integration/pi-smoke.test.mjs",
+    "smoke:codex-plugin": "node --test test/integration/codex-plugin-discovery-smoke.test.mjs",
     "smoke:codex-native": "node --test test/integration/codex-native-smoke.test.mjs",
     "smoke:codex-direct": "node --test test/integration/codex-direct-provider-smoke.test.mjs",
     "smoke:codex-router": "node --test test/integration/codex-router-smoke.test.mjs",

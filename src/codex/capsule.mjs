@@ -1,10 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import {
   chmod,
   copyFile,
   lstat,
   mkdir,
   readFile,
+  readlink,
   realpath,
   rm,
   stat,
@@ -12,6 +14,7 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { assertContextManifestIdentity, planDelegationContext } from "../context/planner.mjs";
 import { DelegationError } from "../errors.mjs";
 import { getCommittedDiffPaths, getHead, getStatusPaths } from "../git.mjs";
 import { evaluatePathScope, globToRegExp, normalizeRelativePath } from "../path-policy.mjs";
@@ -20,6 +23,61 @@ import { runProcess } from "../process.mjs";
 const PRIVATE_SEGMENTS = new Set([".git", ".pi", ".codex", ".ssh", "node_modules"]);
 const PRIVATE_FILES = /^(?:\.env(?:\..*)?|auth\.json|credentials?(?:\..*)?|secrets?(?:\..*)?)$/i;
 const GLOB_CHARACTER = /[*?[\]]/;
+const EXECUTOR_CAPSULE_ROOT = process.platform === "win32"
+  ? "C:\\agent-delegation\\capsule"
+  : "/agent-delegation/capsule";
+
+async function updateFileHash(hash, absolute, before) {
+  await new Promise((resolve, reject) => {
+    const stream = createReadStream(absolute);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", resolve);
+  });
+  const after = await lstat(absolute);
+  if (
+    after.size !== before.size ||
+    after.mtimeMs !== before.mtimeMs ||
+    after.ino !== before.ino ||
+    !after.isFile()
+  ) {
+    throw new DelegationError("source_state_unstable", "Source workspace changed while its private state fingerprint was collected.");
+  }
+}
+
+async function sourceStateFingerprint(root, statusPaths) {
+  const hash = createHash("sha256");
+  for (const relative of [...statusPaths].sort()) {
+    const absolute = path.resolve(root, relative);
+    hash.update(`path:${relative}\0`);
+    let info;
+    try {
+      info = await lstat(absolute);
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        hash.update("missing\0");
+        continue;
+      }
+      throw new DelegationError("source_state_unreadable", "Source workspace state cannot be fingerprinted safely.");
+    }
+    hash.update(`mode:${info.mode & 0o7777}\0size:${info.size}\0`);
+    try {
+      if (info.isSymbolicLink()) {
+        hash.update(`symlink:${await readlink(absolute)}\0`);
+      } else if (info.isFile()) {
+        hash.update("file:\0");
+        await updateFileHash(hash, absolute, info);
+        hash.update("\0");
+      } else {
+        hash.update("other\0");
+      }
+    } catch (error) {
+      if (error instanceof DelegationError) throw error;
+      throw new DelegationError("source_state_unreadable", "Source workspace state cannot be fingerprinted safely.");
+    }
+  }
+  return `sha256:${hash.digest("hex")}`;
+}
 
 function safeTaskName(taskId) {
   return taskId.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 48) || "task";
@@ -32,7 +90,7 @@ function isInside(root, candidate) {
 
 function isPrivate(relative) {
   const parts = relative.split("/");
-  return parts.some((part) => PRIVATE_SEGMENTS.has(part) || PRIVATE_FILES.test(part));
+  return parts.some((part) => PRIVATE_SEGMENTS.has(part.toLowerCase()) || PRIVATE_FILES.test(part));
 }
 
 async function rejectSymlinkComponents(root, relative) {
@@ -70,7 +128,8 @@ async function fileMetadata(root, relative, forbiddenPatterns) {
     relative,
     absolute: resolved,
     mode: info.mode & 0o777,
-    sha256: createHash("sha256").update(content).digest("hex")
+    sha256: createHash("sha256").update(content).digest("hex"),
+    bytes: content.byteLength
   };
 }
 
@@ -106,14 +165,37 @@ export async function preflightCapsule({ envelope, repository, profile, stateRoo
     throw new DelegationError("worker_schema_missing", "Codex worker result schema is unavailable.");
   }
 
-  const readablePaths = (envelope.scope.readablePaths ?? []).map((item) => normalizeRelativePath(item, "readable path"));
+  const contextManifest = envelope.contextPlanning
+    ? await planDelegationContext(envelope, repository.gitRoot)
+    : null;
+  const readablePaths = contextManifest
+    ? contextManifest.selectedFiles.map((item) => item.relativePath)
+    : (envelope.scope.readablePaths ?? []).map((item) => normalizeRelativePath(item, "readable path"));
   const forbiddenPatterns = envelope.scope.forbiddenPaths.map(globToRegExp);
   const inputs = [];
   for (const relative of readablePaths) inputs.push(await fileMetadata(repository.gitRoot, relative, forbiddenPatterns));
+  if (contextManifest) {
+    for (const input of inputs) {
+      const planned = contextManifest.selectedFiles.find((item) => item.relativePath === input.relative);
+      if (!planned || planned.sha256 !== input.sha256 || planned.bytes !== input.bytes) {
+        throw new DelegationError("context_source_changed", "Selected context changed while the capsule was being preflighted.");
+      }
+    }
+  }
 
   const head = await getHead(repository.gitRoot);
   if (mode === "trusted-worktree" && !head) {
     throw new DelegationError("trusted_worktree_requires_head", "trusted-worktree requires a committed Git HEAD.");
+  }
+
+  const sourceStatus = await getStatusPaths(repository.gitRoot);
+  const sourceStateFingerprintValue = await sourceStateFingerprint(repository.gitRoot, sourceStatus);
+  const [headAfterFingerprint, statusAfterFingerprint] = await Promise.all([
+    getHead(repository.gitRoot),
+    getStatusPaths(repository.gitRoot)
+  ]);
+  if (headAfterFingerprint !== head || JSON.stringify(statusAfterFingerprint) !== JSON.stringify(sourceStatus)) {
+    throw new DelegationError("source_state_unstable", "Source workspace changed during capsule preflight.");
   }
 
   return {
@@ -121,34 +203,81 @@ export async function preflightCapsule({ envelope, repository, profile, stateRoo
     stateRoot: resolvedStateRoot,
     schemaPath,
     inputs,
+    contextManifest,
     sourceHead: head,
-    sourceStatus: await getStatusPaths(repository.gitRoot)
+    sourceStatus,
+    sourceStateFingerprint: sourceStateFingerprintValue
   };
 }
 
-async function writeControlFiles(taskRoot, envelope, schemaPath) {
+async function writeControlFiles(taskRoot, envelope, schemaPath, contextManifest) {
   const controlRoot = path.join(taskRoot, "control");
   await mkdir(controlRoot, { recursive: true, mode: 0o700 });
   const envelopePath = path.join(controlRoot, "task-envelope.json");
   const resultSchemaPath = path.join(controlRoot, "codex-worker-result.schema.json");
+  const contextManifestPath = contextManifest ? path.join(controlRoot, "context-manifest.json") : null;
   await writeFile(envelopePath, `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 });
   await copyFile(schemaPath, resultSchemaPath);
   await chmod(resultSchemaPath, 0o600);
-  return { controlRoot, envelopePath, resultSchemaPath };
+  if (contextManifestPath) {
+    await writeFile(contextManifestPath, `${JSON.stringify(contextManifest, null, 2)}\n`, { mode: 0o600 });
+    await chmod(contextManifestPath, 0o600);
+  }
+  return { controlRoot, envelopePath, resultSchemaPath, contextManifestPath };
 }
 
-async function copyCapsuleControls(capsuleRoot, control) {
+function containsSourceRoot(value, sourceRoots) {
+  if (typeof value === "string") {
+    const candidate = value.toLowerCase();
+    return sourceRoots.some((sourceRoot) => candidate.includes(sourceRoot.toLowerCase()));
+  }
+  if (Array.isArray(value)) return value.some((item) => containsSourceRoot(item, sourceRoots));
+  if (value && typeof value === "object") {
+    return Object.values(value).some((item) => containsSourceRoot(item, sourceRoots));
+  }
+  return false;
+}
+
+export function projectExecutorEnvelope(envelope, sourceRoot) {
+  const projection = {
+    ...envelope,
+    repository: {
+      root: EXECUTOR_CAPSULE_ROOT,
+      workingDirectory: ".",
+      dirtyTree: { allow: false, acknowledgedPaths: [] }
+    }
+  };
+  const sourceRoots = [...new Set([sourceRoot, envelope.repository.root].filter(Boolean))];
+  if (containsSourceRoot(projection, sourceRoots)) {
+    throw new DelegationError(
+      "unsafe_executor_envelope",
+      "The sanitized executor envelope still contains the host source root."
+    );
+  }
+  return projection;
+}
+
+async function copyCapsuleControls(capsuleRoot, control, envelope, sourceRoot) {
   const destinationRoot = path.join(capsuleRoot, ".agent-delegation");
   await mkdir(destinationRoot, { recursive: true, mode: 0o700 });
   const envelopeDestination = path.join(destinationRoot, "task-envelope.json");
   const schemaDestination = path.join(destinationRoot, "codex-worker-result.schema.json");
-  await copyFile(control.envelopePath, envelopeDestination);
+  const contextManifestDestination = control.contextManifestPath
+    ? path.join(destinationRoot, "context-manifest.json")
+    : null;
+  const executorEnvelope = projectExecutorEnvelope(envelope, sourceRoot);
+  await writeFile(envelopeDestination, `${JSON.stringify(executorEnvelope, null, 2)}\n`, { mode: 0o600 });
   await copyFile(control.resultSchemaPath, schemaDestination);
   await chmod(envelopeDestination, 0o600);
   await chmod(schemaDestination, 0o600);
+  if (contextManifestDestination) {
+    await copyFile(control.contextManifestPath, contextManifestDestination);
+    await chmod(contextManifestDestination, 0o600);
+  }
+  return { contextManifestDestination };
 }
 
-async function prepareSanitized(preflight, taskRoot, control) {
+async function prepareSanitized(preflight, taskRoot, control, envelope, sourceRoot) {
   const capsuleRoot = path.join(taskRoot, "capsule");
   await mkdir(capsuleRoot, { recursive: true, mode: 0o700 });
   for (const input of preflight.inputs) {
@@ -157,7 +286,7 @@ async function prepareSanitized(preflight, taskRoot, control) {
     await copyFile(input.absolute, destination);
     await chmod(destination, input.mode);
   }
-  await copyCapsuleControls(capsuleRoot, control);
+  const copiedControls = await copyCapsuleControls(capsuleRoot, control, envelope, sourceRoot);
   await checkedGit(["init", "-b", "delegated-task"], capsuleRoot);
   await checkedGit(["add", "--", "."], capsuleRoot);
   const deterministicGitEnv = {
@@ -171,7 +300,7 @@ async function prepareSanitized(preflight, taskRoot, control) {
     "commit", "--allow-empty", "-m", "delegation: capsule baseline"
   ], capsuleRoot, { env: deterministicGitEnv });
   const baseline = (await checkedGit(["rev-parse", "HEAD"], capsuleRoot)).stdout.trim();
-  return { capsuleRoot, baseline };
+  return { capsuleRoot, baseline, executorContextManifestPath: copiedControls.contextManifestDestination };
 }
 
 async function prepareTrusted(preflight, repository, taskRoot) {
@@ -185,16 +314,23 @@ export async function prepareCapsule(options) {
   await mkdir(preflight.stateRoot, { recursive: true, mode: 0o700 });
   const taskRoot = path.join(preflight.stateRoot, `adk-${safeTaskName(options.envelope.taskId)}-${randomUUID()}`);
   await mkdir(taskRoot, { mode: 0o700 });
-  const control = await writeControlFiles(taskRoot, options.envelope, preflight.schemaPath);
+  const control = await writeControlFiles(taskRoot, options.envelope, preflight.schemaPath, preflight.contextManifest);
   let prepared;
   try {
     prepared = preflight.mode === "trusted-worktree"
       ? await prepareTrusted(preflight, options.repository, taskRoot)
-      : await prepareSanitized(preflight, taskRoot, control);
+      : await prepareSanitized(
+        preflight,
+        taskRoot,
+        control,
+        options.envelope,
+        options.repository.gitRoot
+      );
   } catch (error) {
     await rm(taskRoot, { recursive: true, force: true });
     throw error;
   }
+  const inputMetadata = preflight.inputs.map(({ relative, mode, sha256, bytes }) => ({ path: relative, mode, sha256, bytes }));
   const marker = {
     schemaVersion: "1.0.0",
     taskId: options.envelope.taskId,
@@ -202,7 +338,10 @@ export async function prepareCapsule(options) {
     capsuleRoot: prepared.capsuleRoot,
     sourceRoot: options.repository.gitRoot,
     sourceHead: preflight.sourceHead,
-    sourceStatus: preflight.sourceStatus
+    sourceStatus: preflight.sourceStatus,
+    sourceStateFingerprint: preflight.sourceStateFingerprint,
+    inputMetadata,
+    contextManifestFingerprint: preflight.contextManifest?.fingerprint ?? null
   };
   const markerPath = path.join(taskRoot, "capsule.json");
   await writeFile(markerPath, `${JSON.stringify(marker, null, 2)}\n`, { mode: 0o600 });
@@ -215,8 +354,44 @@ export async function prepareCapsule(options) {
     mode: preflight.mode,
     sourceHead: preflight.sourceHead,
     sourceStatus: preflight.sourceStatus,
-    inputMetadata: preflight.inputs.map(({ relative, mode, sha256 }) => ({ path: relative, mode, sha256 }))
+    sourceStateFingerprint: preflight.sourceStateFingerprint,
+    contextManifest: preflight.contextManifest,
+    contextManifestFingerprint: preflight.contextManifest?.fingerprint ?? null,
+    inputMetadata
   };
+}
+
+async function readContextManifestFile(file) {
+  let info;
+  let parsed;
+  try {
+    info = await lstat(file);
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error("unsafe file type");
+    parsed = JSON.parse(await readFile(file, "utf8"));
+  } catch {
+    throw new DelegationError("context_manifest_missing", "Stored context manifest is missing or malformed.");
+  }
+  return assertContextManifestIdentity(parsed);
+}
+
+export async function verifyContextManifestIdentity(capsule, expectedFingerprint = capsule.contextManifestFingerprint) {
+  if (expectedFingerprint === null || expectedFingerprint === undefined) return { verified: false, fingerprint: null };
+  if (!capsule.contextManifestPath) {
+    throw new DelegationError("context_manifest_missing", "Private context manifest is unavailable.");
+  }
+  const visiblePath = capsule.executorContextManifestPath
+    ?? path.join(capsule.capsuleRoot, ".agent-delegation", "context-manifest.json");
+  const [privateManifest, visibleManifest] = await Promise.all([
+    readContextManifestFile(capsule.contextManifestPath),
+    readContextManifestFile(visiblePath)
+  ]);
+  if (
+    privateManifest.fingerprint !== expectedFingerprint ||
+    visibleManifest.fingerprint !== expectedFingerprint
+  ) {
+    throw new DelegationError("context_manifest_mismatch", "Stored context manifest identity no longer matches the task.");
+  }
+  return { verified: true, fingerprint: expectedFingerprint };
 }
 
 export async function collectCandidateEvidence(capsule, scope) {
@@ -239,7 +414,13 @@ export async function collectCandidateEvidence(capsule, scope) {
 export async function verifySourceUnchanged(repository, capsule) {
   const [head, statusPaths] = await Promise.all([getHead(repository.gitRoot), getStatusPaths(repository.gitRoot)]);
   const sameStatus = JSON.stringify(statusPaths) === JSON.stringify(capsule.sourceStatus);
-  return { unchanged: head === capsule.sourceHead && sameStatus, head, statusPaths };
+  const currentFingerprint = sameStatus
+    ? await sourceStateFingerprint(repository.gitRoot, statusPaths)
+    : null;
+  const sameFingerprint = capsule.sourceStateFingerprint === undefined
+    ? true
+    : currentFingerprint === capsule.sourceStateFingerprint;
+  return { unchanged: head === capsule.sourceHead && sameStatus && sameFingerprint, head, statusPaths };
 }
 
 export async function cleanupCapsule(capsule, repository) {

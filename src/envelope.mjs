@@ -9,6 +9,7 @@ const TOP_LEVEL_KEYS = new Set([
   "expectedOutcome",
   "repository",
   "scope",
+  "contextPlanning",
   "instructions",
   "constraints",
   "validation",
@@ -26,7 +27,22 @@ const REQUIRED_EVIDENCE = new Set([
 ]);
 const REASONING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const CREDENTIAL_KEY = /(api.?key|access.?token|auth.?token|password|secret|credential)/i;
-const CREDENTIAL_ARGUMENT = /^--?(?:api[_-]?key|access[_-]?token|auth[_-]?token|password|secret|credential)(?:=|$)/i;
+const CREDENTIAL_ARGUMENT = /^(?:--?)?(?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|access[_-]?token|auth(?:entication)?[_-]?token|token|password|secret|credential)(?:[_-][A-Za-z0-9]+)*(?:=|$)/i;
+const SHELL_EXECUTABLES = new Set([
+  "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh",
+  "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe"
+]);
+const GLOB_CHARACTER = /[*?\[\]{}]/;
+const MAX_PLANNED_FILES = 100_000;
+const MAX_PLANNED_BYTES = 1_073_741_824;
+const MAX_PLANNED_DEPTH = 256;
+
+function rejectUnknown(value, allowed, field) {
+  const unknown = Object.keys(value).filter((key) => !allowed.has(key));
+  if (unknown.length > 0) {
+    throw new DelegationError("invalid_envelope", `Unknown ${field} field(s): ${unknown.join(", ")}.`);
+  }
+}
 
 function requireObject(value, field) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -51,6 +67,98 @@ function requireStringArray(value, field, { min = 0 } = {}) {
     throw new DelegationError("invalid_envelope", `${field} must not contain duplicates.`);
   }
   return value;
+}
+
+function requireNormalizedPathArray(value, field, { min = 0, allowGlobs = true, allowRoot = true } = {}) {
+  requireStringArray(value, field, { min });
+  const normalized = value.map((item, index) => {
+    const candidate = normalizeRelativePath(item, `${field}[${index}]`);
+    if (candidate !== item || (candidate !== "." && (candidate.includes("//") || candidate.includes("/./") || candidate.endsWith("/")))) {
+      throw new DelegationError("invalid_envelope", `${field}[${index}] must be normalized.`);
+    }
+    if (!allowRoot && candidate === ".") {
+      throw new DelegationError("invalid_envelope", `${field}[${index}] must identify a file path, not the repository root.`);
+    }
+    if (!allowGlobs && GLOB_CHARACTER.test(item)) {
+      throw new DelegationError("invalid_envelope", `${field}[${index}] must be a literal path without glob characters.`);
+    }
+    return candidate;
+  });
+  if (new Set(normalized).size !== normalized.length) {
+    throw new DelegationError("invalid_envelope", `${field} must not contain duplicate normalized paths.`);
+  }
+  return value;
+}
+
+function requireBoundedPositiveInteger(value, field, maximum) {
+  if (!Number.isInteger(value) || value < 1 || value > maximum) {
+    throw new DelegationError("invalid_envelope", `${field} must be a bounded positive integer.`);
+  }
+}
+
+function validateReadiness(readiness, field = "contextPlanning.readiness") {
+  if (!Array.isArray(readiness)) {
+    throw new DelegationError("invalid_envelope", `${field} must be an array.`);
+  }
+  const ids = new Set();
+  readiness.forEach((entry, index) => {
+    const entryField = `${field}[${index}]`;
+    requireObject(entry, entryField);
+    rejectUnknown(entry, new Set(["id", "argv", "timeoutMs", "acceptableExitCodes"]), entryField);
+    requireString(entry.id, `${entryField}.id`);
+    if (ids.has(entry.id)) {
+      throw new DelegationError("invalid_envelope", `${field} must not contain duplicate ids.`);
+    }
+    ids.add(entry.id);
+    requireStringArray(entry.argv, `${entryField}.argv`, { min: 1 });
+    const executable = path.basename(entry.argv[0]).toLowerCase();
+    if (SHELL_EXECUTABLES.has(executable)) {
+      throw new DelegationError("invalid_envelope", `${entryField}.argv must invoke a non-shell executable.`);
+    }
+    if (entry.argv.some((argument) => CREDENTIAL_ARGUMENT.test(argument))) {
+      throw new DelegationError("credential_in_envelope", `${entryField}.argv contains a credential-like argument.`);
+    }
+    if (!Number.isInteger(entry.timeoutMs) || entry.timeoutMs < 1 || entry.timeoutMs > 3_600_000) {
+      throw new DelegationError("invalid_envelope", `${entryField}.timeoutMs is invalid.`);
+    }
+    if (!Array.isArray(entry.acceptableExitCodes) || entry.acceptableExitCodes.length < 1) {
+      throw new DelegationError("invalid_envelope", `${entryField}.acceptableExitCodes must contain at least one code.`);
+    }
+    if (entry.acceptableExitCodes.some((code) => !Number.isInteger(code) || code < 0 || code > 255)) {
+      throw new DelegationError("invalid_envelope", `${entryField}.acceptableExitCodes must contain integer exit codes from 0 through 255.`);
+    }
+    if (new Set(entry.acceptableExitCodes).size !== entry.acceptableExitCodes.length) {
+      throw new DelegationError("invalid_envelope", `${entryField}.acceptableExitCodes must not contain duplicates.`);
+    }
+  });
+}
+
+function validateContextPlanning(contextPlanning, scope, execution) {
+  requireObject(contextPlanning, "contextPlanning");
+  rejectUnknown(contextPlanning, new Set(["strategy", "seeds", "analyzers", "budget", "readiness"]), "contextPlanning");
+  if (contextPlanning.strategy !== "dependency-closure") {
+    throw new DelegationError("invalid_envelope", "contextPlanning.strategy must be dependency-closure.");
+  }
+  if (!Array.isArray(scope.discoverablePaths) || scope.discoverablePaths.length < 1) {
+    throw new DelegationError("invalid_envelope", "Planned mode requires non-empty scope.discoverablePaths.");
+  }
+  requireNormalizedPathArray(scope.discoverablePaths, "scope.discoverablePaths", { min: 1 });
+  requireNormalizedPathArray(contextPlanning.seeds, "contextPlanning.seeds", { min: 1, allowGlobs: false, allowRoot: false });
+  requireStringArray(contextPlanning.analyzers, "contextPlanning.analyzers", { min: 1 });
+  if (contextPlanning.analyzers.some((analyzer) => analyzer !== "node-esm")) {
+    throw new DelegationError("invalid_envelope", "contextPlanning.analyzers only supports node-esm.");
+  }
+  if (!contextPlanning.budget || typeof contextPlanning.budget !== "object" || Array.isArray(contextPlanning.budget)) {
+    throw new DelegationError("invalid_envelope", "contextPlanning.budget must be an object.");
+  }
+  rejectUnknown(contextPlanning.budget, new Set(["maxFiles", "maxBytes", "maxDepth"]), "contextPlanning.budget");
+  requireBoundedPositiveInteger(contextPlanning.budget.maxFiles, "contextPlanning.budget.maxFiles", MAX_PLANNED_FILES);
+  requireBoundedPositiveInteger(contextPlanning.budget.maxBytes, "contextPlanning.budget.maxBytes", MAX_PLANNED_BYTES);
+  requireBoundedPositiveInteger(contextPlanning.budget.maxDepth, "contextPlanning.budget.maxDepth", MAX_PLANNED_DEPTH);
+  validateReadiness(contextPlanning.readiness);
+  if (execution?.exposureMode === "trusted-worktree") {
+    throw new DelegationError("invalid_envelope", "contextPlanning cannot be used with trusted-worktree exposure.");
+  }
 }
 
 function rejectCredentials(value, trail = []) {
@@ -80,12 +188,14 @@ export function validateTaskEnvelope(input) {
   requireString(envelope.expectedOutcome, "expectedOutcome");
 
   const repository = requireObject(envelope.repository, "repository");
+  rejectUnknown(repository, new Set(["root", "workingDirectory", "dirtyTree"]), "repository");
   const root = requireString(repository.root, "repository.root");
   if (!path.isAbsolute(root) && !path.win32.isAbsolute(root)) {
     throw new DelegationError("invalid_envelope", "repository.root must be absolute.");
   }
   normalizeRelativePath(requireString(repository.workingDirectory, "repository.workingDirectory"), "repository.workingDirectory");
   const dirtyTree = requireObject(repository.dirtyTree, "repository.dirtyTree");
+  rejectUnknown(dirtyTree, new Set(["allow", "acknowledgedPaths"]), "repository.dirtyTree");
   if (typeof dirtyTree.allow !== "boolean") {
     throw new DelegationError("invalid_envelope", "repository.dirtyTree.allow must be boolean.");
   }
@@ -93,10 +203,12 @@ export function validateTaskEnvelope(input) {
   dirtyTree.acknowledgedPaths.forEach((item) => normalizeRelativePath(item, "acknowledged dirty path"));
 
   const scope = requireObject(envelope.scope, "scope");
+  rejectUnknown(scope, new Set(["allowedPaths", "forbiddenPaths", "readablePaths", "discoverablePaths"]), "scope");
   requireStringArray(scope.allowedPaths, "scope.allowedPaths", { min: 1 });
   requireStringArray(scope.forbiddenPaths, "scope.forbiddenPaths");
   if (scope.readablePaths !== undefined) requireStringArray(scope.readablePaths, "scope.readablePaths");
   [...scope.allowedPaths, ...scope.forbiddenPaths, ...(scope.readablePaths ?? [])].forEach((item) => normalizeRelativePath(item, "scope pattern"));
+  if (scope.discoverablePaths !== undefined) requireNormalizedPathArray(scope.discoverablePaths, "scope.discoverablePaths");
 
   requireStringArray(envelope.instructions, "instructions", { min: 1 });
   requireStringArray(envelope.constraints, "constraints");
@@ -113,6 +225,7 @@ export function validateTaskEnvelope(input) {
   }
   envelope.validation.forEach((entry, index) => {
     requireObject(entry, `validation[${index}]`);
+    rejectUnknown(entry, new Set(["id", "argv", "timeoutMs"]), `validation[${index}]`);
     requireString(entry.id, `validation[${index}].id`);
     requireStringArray(entry.argv, `validation[${index}].argv`, { min: 1 });
     if (entry.argv.some((argument) => CREDENTIAL_ARGUMENT.test(argument))) {
@@ -124,6 +237,7 @@ export function validateTaskEnvelope(input) {
   });
 
   const resultFormat = requireObject(envelope.resultFormat, "resultFormat");
+  rejectUnknown(resultFormat, new Set(["schemaVersion"]), "resultFormat");
   if (resultFormat.schemaVersion !== "1.0.0") {
     throw new DelegationError("invalid_envelope", "resultFormat.schemaVersion must be 1.0.0.");
   }
@@ -160,6 +274,10 @@ export function validateTaskEnvelope(input) {
     if (execution.trustedWorktreeAcknowledged !== undefined && typeof execution.trustedWorktreeAcknowledged !== "boolean") {
       throw new DelegationError("invalid_envelope", "execution.trustedWorktreeAcknowledged must be boolean.");
     }
+  }
+
+  if (envelope.contextPlanning !== undefined) {
+    validateContextPlanning(envelope.contextPlanning, scope, envelope.execution);
   }
 
   rejectCredentials(envelope);

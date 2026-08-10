@@ -22,9 +22,14 @@ export async function createDirectory() {
 }
 
 export async function makeMinimalPlugin(root, manifest) {
+  await mkdir(path.join(root, ".agents", "plugins"), { recursive: true });
   await mkdir(path.join(root, "skills", "demo"), { recursive: true });
   await mkdir(path.join(root, "contracts"), { recursive: true });
   await writeFile(path.join(root, "plugin.json"), JSON.stringify(manifest, null, 2));
+  await writeFile(path.join(root, ".agents", "plugins", "marketplace.json"), JSON.stringify({
+    name: "fixture-marketplace",
+    plugins: [{ name: manifest.name, source: { source: "local", path: "." } }]
+  }, null, 2));
   await writeFile(path.join(root, "skills", "demo", "SKILL.md"), "---\nname: demo\ndescription: Demo skill.\n---\n");
   await writeFile(path.join(root, "contracts", "task-envelope.schema.json"), "{}\n");
   await writeFile(path.join(root, "contracts", "execution-result.schema.json"), "{}\n");

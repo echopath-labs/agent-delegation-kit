@@ -9,7 +9,7 @@ const MANIFEST_FIELDS = new Set([
   "repository", "license", "keywords", "extensions"
 ]);
 const ALLOWED_TOP_LEVEL = new Set([
-  ".git", ".gitignore", "LICENSE", "README.md", "CONTRIBUTING.md",
+  ".agents", ".git", ".gitignore", ".npmignore", "LICENSE", "README.md", "CONTRIBUTING.md",
   "plugin.json", "package.json", "skills", "contracts", "hosts", "executors",
   "adapters", "bin", "src", "scripts", "test", "examples"
 ]);
@@ -63,6 +63,21 @@ export async function validatePackage(root) {
   }
   if (manifest) validateManifest(manifest, errors);
 
+  try {
+    const marketplace = JSON.parse(await readFile(path.join(resolvedRoot, ".agents", "plugins", "marketplace.json"), "utf8"));
+    const entry = Array.isArray(marketplace.plugins)
+      ? marketplace.plugins.find((item) => item?.name === manifest?.name)
+      : null;
+    if (typeof marketplace.name !== "string" || marketplace.name.length === 0) {
+      errors.push("Local marketplace name is missing or invalid.");
+    }
+    if (!entry || entry.source?.source !== "local" || entry.source?.path !== ".") {
+      errors.push("Local marketplace must expose the root plugin by its manifest name.");
+    }
+  } catch (error) {
+    errors.push(`.agents/plugins/marketplace.json is missing or invalid JSON: ${error.message}`);
+  }
+
   const entries = await walk(resolvedRoot);
   const manifests = entries.filter((item) => item.entry.isFile() && item.entry.name === "plugin.json");
   if (manifests.length !== 1 || manifests[0]?.relative !== "plugin.json") {
@@ -104,6 +119,7 @@ export async function validatePackage(root) {
 
   for (const contract of [
     "task-envelope.schema.json",
+    "context-manifest.schema.json",
     "execution-result.schema.json",
     "codex-worker-result.schema.json",
     "host-review-packet.schema.json"

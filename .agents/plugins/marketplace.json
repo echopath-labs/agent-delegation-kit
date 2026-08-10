@@ -1,0 +1,20 @@
+{
+  "name": "agent-delegation-kit-local",
+  "interface": {
+    "displayName": "Agent Delegation Kit"
+  },
+  "plugins": [
+    {
+      "name": "agent-delegation-kit",
+      "source": {
+        "source": "local",
+        "path": "."
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

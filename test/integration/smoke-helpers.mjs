@@ -45,6 +45,7 @@ export async function runRealCodexSmoke(profile, diagnostic, scenario = {}) {
         taskId: envelope.taskId,
         profileFingerprint: prepared.profile.fingerprint,
         capsuleBaseline: prepared.capsule.baseline,
+        contextManifestFingerprint: prepared.capsule.contextManifestFingerprint,
         priorResultIdentity: execution.state.resultIdentity,
         prompt: [
           "Do not change any file. Re-emit only the structured result for the completed task.",
@@ -60,6 +61,7 @@ export async function runRealCodexSmoke(profile, diagnostic, scenario = {}) {
         taskId: envelope.taskId,
         profileFingerprint: prepared.profile.fingerprint,
         capsuleBaseline: prepared.capsule.baseline,
+        contextManifestFingerprint: prepared.capsule.contextManifestFingerprint,
         priorResultIdentity: execution.state.resultIdentity,
         prompt: [
           "Host-controlled validation failed. Stay within the original path authority.",

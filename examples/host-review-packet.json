@@ -7,6 +7,39 @@
     "fingerprint": "sha256:example-profile-fingerprint",
     "effectiveModel": "configured-codex-model"
   },
+  "contextEvidence": {
+    "plan": {
+      "mode": "planned",
+      "strategy": "dependency-closure",
+      "fingerprint": "sha256:example-context-fingerprint",
+      "selectedFileCount": 4,
+      "selectedBytes": 4096,
+      "unresolvedReferenceCount": 0,
+      "budgetUtilization": {
+        "files": 0.2,
+        "bytes": 0.04,
+        "maxDepth": 5
+      }
+    },
+    "readiness": {
+      "outcome": "passed",
+      "commandCount": 1,
+      "passedCount": 1,
+      "failedCount": 0,
+      "mutationDetected": false,
+      "commands": [
+        {
+          "id": "module-load",
+          "status": "passed",
+          "exitCode": 0,
+          "durationMs": 45,
+          "summary": "ready",
+          "reason": null
+        }
+      ]
+    },
+    "executorContextGap": null
+  },
   "executorSelfReport": {
     "schemaVersion": "1.0.0",
     "taskId": "example-codex-task",

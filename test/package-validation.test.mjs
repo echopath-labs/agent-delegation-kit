@@ -34,6 +34,18 @@ test("missing immediate skill is rejected", async () => {
   await rm(root, { recursive: true });
 });
 
+test("invalid local marketplace metadata is rejected", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "adk-package-"));
+  await makeMinimalPlugin(root, validManifest);
+  await writeFile(path.join(root, ".agents", "plugins", "marketplace.json"), JSON.stringify({
+    name: "fixture-marketplace",
+    plugins: [{ name: "different-plugin", source: { source: "local", path: "./nested" } }]
+  }));
+  const errors = await validatePackage(root);
+  assert(errors.some((item) => item.includes("must expose the root plugin")));
+  await rm(root, { recursive: true });
+});
+
 test("unexpected private workspace files are rejected", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "adk-package-"));
   await makeMinimalPlugin(root, validManifest);

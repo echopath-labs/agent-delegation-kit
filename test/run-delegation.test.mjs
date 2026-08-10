@@ -6,6 +6,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { validateTaskEnvelope } from "../src/envelope.mjs";
+import { parseStatusPaths } from "../src/git.mjs";
 import { runDelegation } from "../src/run-delegation.mjs";
 import { createDirectory, createGitRepository, makeEnvelope } from "./helpers.mjs";
 
@@ -66,6 +67,29 @@ test("dirty tree override requires and records acknowledged paths", async () => 
   assert.equal(result.status, "completed");
   assert.deepEqual(result.baseline.dirtyPathsBefore, ["README.md"]);
   assert(result.residualRisks.some((item) => item.includes("acknowledged uncommitted changes")));
+});
+
+test("staged rename requires acknowledgement of both source and destination", async () => {
+  const root = await createGitRepository();
+  await writeFile(path.join(root, "outside.txt"), "outside\n");
+  await execFileAsync("git", ["add", "outside.txt"], { cwd: root });
+  await execFileAsync("git", ["commit", "-m", "test: add rename source"], { cwd: root });
+  await execFileAsync("git", ["mv", "outside.txt", "allowed.txt"], { cwd: root });
+  const envelope = makeEnvelope(root, {
+    repository: { dirtyTree: { allow: true, acknowledgedPaths: ["allowed.txt"] } }
+  });
+  await assert.rejects(
+    execute(envelope, "nochange"),
+    (error) => error.code === "dirty_tree_unacknowledged" &&
+      error.details.paths.includes("outside.txt")
+  );
+});
+
+test("porcelain rename and copy records retain both path identities", () => {
+  assert.deepEqual(
+    parseStatusPaths("R  allowed.txt\0outside.txt\0C  copy.txt\0source.txt\0"),
+    ["allowed.txt", "copy.txt", "outside.txt", "source.txt"]
+  );
 });
 
 test("executor blocked result skips validation", async () => {
@@ -140,6 +164,21 @@ test("out-of-scope edit is independently rejected", async () => {
   assert.equal(result.hostAcceptance.eligible, false);
 });
 
+test("staged rename from an unapproved source is independently rejected", async () => {
+  const root = await createGitRepository();
+  await writeFile(path.join(root, "outside.txt"), "outside\n");
+  await execFileAsync("git", ["add", "outside.txt"], { cwd: root });
+  await execFileAsync("git", ["commit", "-m", "test: add staged rename source"], { cwd: root });
+  const envelope = makeEnvelope(root, {
+    scope: { allowedPaths: ["allowed.txt"], forbiddenPaths: [] }
+  });
+  const result = await execute(envelope, "staged-rename");
+  assert.equal(result.status, "rejected");
+  assert.deepEqual(result.changedPaths, ["allowed.txt", "outside.txt"]);
+  assert.deepEqual(result.scope.breaches, ["outside.txt"]);
+  assert.equal(result.hostAcceptance.eligible, false);
+});
+
 test("branch changes are rejected as baseline breaches", async () => {
   const root = await createGitRepository();
   const result = await execute(makeEnvelope(root), "branch-change");
@@ -159,4 +198,8 @@ test("credential-like validation arguments are rejected", () => {
     validation: [{ id: "unsafe", argv: ["tool", "--api-key", "do-not-store"] }]
   });
   assert.throws(() => validateTaskEnvelope(envelope), (error) => error.code === "credential_in_envelope");
+  const environmentAssignment = makeEnvelope("/absolute/repository", {
+    validation: [{ id: "unsafe", argv: ["env", "API_KEY=do-not-store", "tool"] }]
+  });
+  assert.throws(() => validateTaskEnvelope(environmentAssignment), (error) => error.code === "credential_in_envelope");
 });

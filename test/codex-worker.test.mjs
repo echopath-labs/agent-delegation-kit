@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -117,9 +117,11 @@ test("direct provider home is private, deterministic, and does not inherit globa
   const codexHome = await prepareTaskCodexHome(capsule, selected, { sourceCodexHome });
   const configPath = path.join(codexHome, "config.toml");
   const config = await readFile(configPath, "utf8");
-  assert.equal(config, directProviderConfig(selected));
+  assert.equal(config, directProviderConfig(selected, capsule.capsuleRoot));
   assert.match(config, /model_provider = "compatible-provider"/);
   assert.match(config, /env_key = "PROVIDER_API_KEY"/);
+  assert.match(config, /trust_level = "trusted"/);
+  assert.ok(config.includes(`[projects.${JSON.stringify(capsule.capsuleRoot)}]`));
   assert.doesNotMatch(config, /global-secret|unexpected-global|credential-value/);
   assert.equal((await stat(configPath)).mode & 0o777, 0o600);
   await assert.rejects(lstat(path.join(codexHome, "auth.json")), (error) => error.code === "ENOENT");
@@ -155,6 +157,34 @@ test("direct provider worker injects only the selected credential and approved e
   assert.doesNotMatch(JSON.stringify(execution), /credential-value/);
 });
 
+test("direct provider correction accepts the exact task-scoped project trust configuration", async () => {
+  const { capsule, envelope } = await fixture();
+  const selected = directProfile();
+  await prepareTaskCodexHome(capsule, selected);
+  let invoked = false;
+  const execution = await runCodexWorker({
+    envelope,
+    profile: selected,
+    capsule,
+    correction: { threadId: "direct-thread-1", sequence: 1, prompt: "Correct the task." }
+  }, {
+    environment: { PROVIDER_API_KEY: "credential-value" },
+    runProcess: async () => {
+      invoked = true;
+      return {
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        stderr: "",
+        stdout: `${JSON.stringify({ type: "turn.completed", usage: {} })}\n`
+      };
+    },
+    readResultFile: async () => JSON.stringify(completedResult())
+  });
+  assert.equal(invoked, true);
+  assert.equal(execution.workerResult.status, "completed");
+});
+
 test("direct provider correction refuses task configuration drift without invoking Codex", async () => {
   const { capsule, envelope } = await fixture();
   const selected = directProfile();
@@ -177,6 +207,31 @@ test("direct provider correction refuses task configuration drift without invoki
   assert.equal(execution.threadId, "direct-thread-1");
   assert.equal(execution.workerResult.blocking.code, "provider_config_drift");
   assert.match(await readFile(path.join(codexHome, "config.toml"), "utf8"), /fallback/);
+});
+
+test("direct provider correction refuses permission drift without invoking Codex", async () => {
+  const { capsule, envelope } = await fixture();
+  const selected = directProfile();
+  const codexHome = await prepareTaskCodexHome(capsule, selected);
+  const configPath = path.join(codexHome, "config.toml");
+  await chmod(configPath, 0o644);
+  let invoked = false;
+  const execution = await runCodexWorker({
+    envelope,
+    profile: selected,
+    capsule,
+    correction: { threadId: "direct-thread-1", sequence: 1, prompt: "Correct the task." }
+  }, {
+    environment: { PROVIDER_API_KEY: "credential-value" },
+    runProcess: async () => {
+      invoked = true;
+      throw new Error("must not run");
+    }
+  });
+  assert.equal(invoked, false);
+  assert.equal(execution.threadId, "direct-thread-1");
+  assert.equal(execution.workerResult.blocking.code, "provider_config_drift");
+  assert.equal((await stat(configPath)).mode & 0o777, 0o644);
 });
 
 for (const scenario of ["missing", "symlink"]) {

@@ -24,5 +24,6 @@ A direct-provider worker receives a generated task-scoped Codex base
 configuration rather than the user's global `config.toml` or `auth.json`. The
 configuration binds the provider, base URL, `responses` wire API, credential
 environment-variable name, model, and workspace-write sandbox. Its bytes and
-permissions are verified again before correction resume; drift stops execution
+the exact disposable capsule project trust are materialized before first use.
+Its bytes and permissions are verified again before correction resume; drift stops execution
 instead of selecting another route.

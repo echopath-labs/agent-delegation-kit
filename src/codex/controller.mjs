@@ -4,11 +4,13 @@ import { fileURLToPath } from "node:url";
 import { validateTaskEnvelope } from "../envelope.mjs";
 import { collectGitState, enforceDirtyTreePolicy, resolveRepository } from "../git.mjs";
 import { DelegationError } from "../errors.mjs";
-import { cleanupCapsule, prepareCapsule } from "./capsule.mjs";
+import { cleanupCapsule, prepareCapsule, verifyContextManifestIdentity, verifySourceUnchanged } from "./capsule.mjs";
 import { checkCodexCompatibility } from "./compatibility.mjs";
 import { requireProviderCredential, resolveWorkerProfile } from "./profile.mjs";
 import { checkRouterHealth } from "./router.mjs";
+import { loadReadinessEvidence, persistReadinessEvidence, runCapsuleReadiness } from "./readiness.mjs";
 import {
+  assertCorrectionIdentity,
   authorizeCorrection,
   createTaskState,
   readTaskState,
@@ -29,12 +31,6 @@ export async function prepareCodexDelegation(input, options = {}) {
   }
   const profile = resolveWorkerProfile(input.profileRegistry, envelope.executionProfile);
   const environment = options.environment ?? process.env;
-  const providerCredential = requireProviderCredential(profile, environment);
-  const compatibility = await checkCodexCompatibility(profile, {
-    runProcess: options.compatibilityProcess,
-    environment
-  });
-  const router = await checkRouterHealth(profile, { fetch: options.fetch });
   const repository = await resolveRepository(envelope.repository);
   const sourceState = await collectGitState(repository.gitRoot);
   enforceDirtyTreePolicy(sourceState, envelope.repository.dirtyTree);
@@ -46,13 +42,48 @@ export async function prepareCodexDelegation(input, options = {}) {
     workerResultSchemaPath: input.workerResultSchemaPath ?? DEFAULT_WORKER_SCHEMA
   });
   let lifecycle;
+  let readiness;
+  let readinessPath;
+  let providerCredential;
+  let compatibility;
+  let router;
   try {
+    readiness = await runCapsuleReadiness({ envelope, capsule }, {
+      runProcess: options.readinessProcess,
+      environment
+    });
+    const sourceAfterReadiness = await verifySourceUnchanged(repository, capsule);
+    if (!sourceAfterReadiness.unchanged) {
+      throw new DelegationError(
+        "context_readiness_source_mutation",
+        "Source workspace changed during context readiness.",
+        { readiness, workerRequestCount: 0 }
+      );
+    }
+    readinessPath = await persistReadinessEvidence(capsule, readiness);
+    providerCredential = requireProviderCredential(profile, environment);
+    compatibility = await checkCodexCompatibility(profile, {
+      runProcess: options.compatibilityProcess,
+      environment
+    });
+    router = await checkRouterHealth(profile, { fetch: options.fetch });
     lifecycle = await createTaskState({ capsule, profile, hostInstanceId: input.hostInstanceId });
   } catch (error) {
     await cleanupCapsule(capsule, repository);
     throw error;
   }
-  return { envelope, profile, compatibility, router, providerCredential, repository, sourceState, capsule, statePath: lifecycle.statePath };
+  return {
+    envelope,
+    profile,
+    compatibility,
+    router,
+    providerCredential,
+    repository,
+    sourceState,
+    capsule: { ...capsule, readinessPath },
+    readiness,
+    statePath: lifecycle.statePath
+  };
 }
 
 export async function executeCodexDelegation(prepared, options = {}) {
@@ -77,16 +108,20 @@ export async function correctCodexDelegation(prepared, correction, options = {})
   if (typeof correction?.prompt !== "string" || correction.prompt.trim().length === 0) {
     throw new DelegationError("invalid_correction", "A non-empty correction prompt is required.");
   }
+  await verifyContextManifestIdentity(prepared.capsule);
+  const correctionIdentity = {
+    taskId: correction.taskId,
+    profileFingerprint: correction.profileFingerprint,
+    capsuleBaseline: correction.capsuleBaseline,
+    contextManifestFingerprint: correction.contextManifestFingerprint,
+    priorResultIdentity: correction.priorResultIdentity
+  };
+  await assertCorrectionIdentity(prepared.statePath, correctionIdentity);
   const environment = options.environment ?? process.env;
   requireProviderCredential(prepared.profile, environment);
   await checkCodexCompatibility(prepared.profile, { runProcess: options.compatibilityProcess, environment });
   await checkRouterHealth(prepared.profile, { fetch: options.fetch });
-  const authorized = await authorizeCorrection(prepared.statePath, {
-    taskId: correction.taskId,
-    profileFingerprint: correction.profileFingerprint,
-    capsuleBaseline: correction.capsuleBaseline,
-    priorResultIdentity: correction.priorResultIdentity
-  });
+  const authorized = await authorizeCorrection(prepared.statePath, correctionIdentity);
   await transitionTaskState(prepared.statePath, "running");
   const execution = await runCodexWorker({
     ...prepared,
@@ -131,6 +166,10 @@ export async function loadCodexDelegation(taskRootInput, profileRegistry) {
     throw new DelegationError("task_state_mismatch", "The stored capsule is outside its task directory.");
   }
   const controlRoot = path.join(taskRoot, "control");
+  const contextManifestFingerprint = marker.contextManifestFingerprint ?? null;
+  if ((state.contextManifestFingerprint ?? null) !== contextManifestFingerprint) {
+    throw new DelegationError("task_state_mismatch", "Task marker and lifecycle context identities do not match.");
+  }
   const capsule = {
     taskId: state.taskId,
     taskRoot,
@@ -139,10 +178,24 @@ export async function loadCodexDelegation(taskRootInput, profileRegistry) {
     controlRoot,
     envelopePath: path.join(controlRoot, "task-envelope.json"),
     resultSchemaPath: path.join(controlRoot, "codex-worker-result.schema.json"),
+    contextManifestPath: contextManifestFingerprint ? path.join(controlRoot, "context-manifest.json") : null,
+    executorContextManifestPath: contextManifestFingerprint
+      ? path.join(capsuleRoot, ".agent-delegation", "context-manifest.json")
+      : null,
+    contextManifestFingerprint,
     mode: marker.mode,
     baseline: state.capsuleBaseline,
     sourceHead: marker.sourceHead,
-    sourceStatus: marker.sourceStatus
+    sourceStatus: marker.sourceStatus,
+    sourceStateFingerprint: marker.sourceStateFingerprint,
+    inputMetadata: Array.isArray(marker.inputMetadata) ? marker.inputMetadata : []
   };
-  return { envelope, profile, repository, capsule, statePath };
+  await verifyContextManifestIdentity(capsule, contextManifestFingerprint);
+  const contextManifest = contextManifestFingerprint
+    ? JSON.parse(await readFile(capsule.contextManifestPath, "utf8"))
+    : null;
+  capsule.contextManifest = contextManifest;
+  const readiness = await loadReadinessEvidence(capsule, { allowMissing: envelope.contextPlanning === undefined });
+  capsule.readinessPath = path.join(controlRoot, "readiness-evidence.json");
+  return { envelope, profile, repository, capsule, readiness, statePath };
 }

@@ -57,9 +57,8 @@ export async function getBranch(gitRoot) {
   return result.exitCode === 0 ? result.stdout.trim() : "detached";
 }
 
-export async function getStatusPaths(gitRoot) {
-  const result = await runGit(["status", "--porcelain=v1", "-z", "--untracked-files=all"], gitRoot);
-  const records = result.stdout.split("\0");
+export function parseStatusPaths(output) {
+  const records = output.split("\0");
   const paths = [];
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index];
@@ -67,9 +66,21 @@ export async function getStatusPaths(gitRoot) {
     const status = record.slice(0, 2);
     const candidate = record.slice(3);
     if (candidate) paths.push(normalizeRelativePath(candidate, "Git status path"));
-    if (status.includes("R") || status.includes("C")) index += 1;
+    if (status.includes("R") || status.includes("C")) {
+      const source = records[index + 1];
+      if (!source) {
+        throw new DelegationError("git_error", "Git status rename or copy record is incomplete.");
+      }
+      paths.push(normalizeRelativePath(source, "Git status source path"));
+      index += 1;
+    }
   }
   return [...new Set(paths)].sort();
+}
+
+export async function getStatusPaths(gitRoot) {
+  const result = await runGit(["status", "--porcelain=v1", "-z", "--untracked-files=all"], gitRoot);
+  return parseStatusPaths(result.stdout);
 }
 
 export async function getCommittedDiffPaths(gitRoot, headBefore, headAfter) {

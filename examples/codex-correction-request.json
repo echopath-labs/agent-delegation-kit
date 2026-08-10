@@ -2,6 +2,7 @@
   "taskId": "example-codex-implementation",
   "profileFingerprint": "sha256:stored-profile-fingerprint",
   "capsuleBaseline": "stored-capsule-baseline",
+  "contextManifestFingerprint": null,
   "priorResultIdentity": "sha256:stored-result-identity",
   "prompt": "Fix the identified focused-test failure without expanding paths or authority. Rerun the declared validation and return the versioned worker result."
 }

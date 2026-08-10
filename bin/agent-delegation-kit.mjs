@@ -75,6 +75,7 @@ async function correctCodex(options) {
     taskId: state.taskId,
     profileFingerprint: state.profileFingerprint,
     capsuleBaseline: state.capsuleBaseline,
+    contextManifestFingerprint: state.contextManifestFingerprint,
     priorResultIdentity: state.resultIdentity,
     prompt
   });

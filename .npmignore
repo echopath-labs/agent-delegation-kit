@@ -1,0 +1,7 @@
+.git/
+.env
+.env.*
+*.log
+*.tmp
+coverage/
+node_modules/

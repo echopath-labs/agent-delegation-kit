@@ -28,8 +28,13 @@ export function globToRegExp(pattern) {
     const character = normalized[index];
     if (character === "*") {
       if (normalized[index + 1] === "*") {
-        source += ".*";
         index += 1;
+        if (normalized[index + 1] === "/") {
+          source += "(?:.*/)?";
+          index += 1;
+        } else {
+          source += ".*";
+        }
       } else {
         source += "[^/]*";
       }

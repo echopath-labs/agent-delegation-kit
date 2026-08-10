@@ -36,6 +36,7 @@ export async function createTaskState({ capsule, profile, hostInstanceId }) {
     profileName: profile.name,
     profileFingerprint: profile.fingerprint,
     capsuleBaseline: capsule.baseline,
+    contextManifestFingerprint: capsule.contextManifestFingerprint ?? null,
     resultIdentity: null,
     correctionSequence: 0
   };
@@ -78,17 +79,26 @@ export async function recordWorkerResult(statePath, { threadId, result }) {
   });
 }
 
-export async function authorizeCorrection(statePath, identity) {
+export async function assertCorrectionIdentity(statePath, identity) {
   const state = await readTaskState(statePath);
-  const mismatches = [
+  const dimensions = [
     ["taskId", identity.taskId],
     ["profileFingerprint", identity.profileFingerprint],
     ["capsuleBaseline", identity.capsuleBaseline],
     ["resultIdentity", identity.priorResultIdentity]
-  ].filter(([field, value]) => state[field] !== value).map(([field]) => field);
+  ];
+  if (state.contextManifestFingerprint !== null && state.contextManifestFingerprint !== undefined) {
+    dimensions.push(["contextManifestFingerprint", identity.contextManifestFingerprint]);
+  }
+  const mismatches = dimensions.filter(([field, value]) => state[field] !== value).map(([field]) => field);
   if (mismatches.length > 0 || !state.executorThreadId) {
     throw new DelegationError("resume_identity_mismatch", `Correction resume identity mismatch: ${mismatches.join(", ") || "executorThreadId"}.`);
   }
+  return state;
+}
+
+export async function authorizeCorrection(statePath, identity) {
+  const state = await assertCorrectionIdentity(statePath, identity);
   return transitionTaskState(statePath, "correction_requested", {
     correctionSequence: state.correctionSequence + 1
   });

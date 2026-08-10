@@ -33,9 +33,9 @@ function tomlString(value) {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")}"`;
 }
 
-export function directProviderConfig(profile) {
+export function directProviderConfig(profile, capsuleRoot = undefined) {
   if (!profile.provider) return null;
-  return [
+  const lines = [
     `model = ${tomlString(profile.model)}`,
     `model_provider = ${tomlString(profile.provider.name)}`,
     'sandbox_mode = "workspace-write"',
@@ -46,7 +46,18 @@ export function directProviderConfig(profile) {
     `env_key = ${tomlString(profile.provider.credentialEnv)}`,
     `wire_api = ${tomlString(profile.provider.wireApi)}`,
     ""
-  ].join("\n");
+  ];
+  if (capsuleRoot !== undefined) {
+    if (!path.isAbsolute(capsuleRoot)) {
+      throw new DelegationError("invalid_capsule_root", "Direct provider project trust requires an absolute task capsule path.");
+    }
+    lines.push(
+      `[projects.${tomlString(path.resolve(capsuleRoot))}]`,
+      'trust_level = "trusted"',
+      ""
+    );
+  }
+  return lines.join("\n");
 }
 
 async function materializeDirectConfig(destination, expected, requireExisting = false) {
@@ -82,7 +93,7 @@ export async function prepareTaskCodexHome(capsule, profile, options = {}) {
   if (profile.provider) {
     await materializeDirectConfig(
       path.join(codexHome, "config.toml"),
-      directProviderConfig(profile),
+      directProviderConfig(profile, capsule.capsuleRoot),
       options.requireDirectConfig === true
     );
     return codexHome;
@@ -111,7 +122,10 @@ function promptFor(envelope, correction) {
     `Stop conditions: ${envelope.stopConditions.join(" | ")}`,
     "You are the delegated executor, not the coordinating host. Do not accept, integrate, commit, push, tag, publish, or deploy this work.",
     "First inspect the declared capsule context, use available tools to perform the engineering task, and run useful checks. The structured JSON is the final report, not a substitute for doing the task.",
+    "The executor-visible task envelope uses a stable virtual repository root for deterministic, privacy-safe identity. Your actual current working directory is the capsule; resolve task paths relative to it.",
+    "When .agent-delegation/context-manifest.json is present, use it only to understand selected context and provenance; never edit task controls under .agent-delegation.",
     "Do not report completed unless the expected outcome is actually present in the capsule. If required context or tool execution is unavailable, report blocked with non-empty blocking.code and blocking.message.",
+    "When concrete missing task context is the blocker, use blocking.code context_gap and identify only the missing repository-relative dependency or information in blocking.message; do not request self-expansion.",
     "Return only the structured result required by the supplied output schema. Execution completion remains pending host review.",
     "Use exactly these top-level result keys: schemaVersion, taskId, status, summary, changedFiles, validations, residualRisks, blocking.",
     "Do not add reason, message, acceptance, evidence, metadata, or any other top-level field. Put failure details only in blocking.",

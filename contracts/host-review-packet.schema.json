@@ -9,6 +9,7 @@
     "taskId",
     "lifecycleState",
     "profile",
+    "contextEvidence",
     "executorSelfReport",
     "hostObserved",
     "validations",
@@ -30,6 +31,62 @@
         "name": { "type": "string" },
         "fingerprint": { "type": "string" },
         "effectiveModel": { "type": ["string", "null"] }
+      }
+    },
+    "contextEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan", "readiness", "executorContextGap"],
+      "properties": {
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "strategy",
+            "fingerprint",
+            "selectedFileCount",
+            "selectedBytes",
+            "unresolvedReferenceCount",
+            "budgetUtilization"
+          ],
+          "properties": {
+            "mode": { "enum": ["explicit", "planned"] },
+            "strategy": { "type": ["string", "null"] },
+            "fingerprint": { "type": ["string", "null"] },
+            "selectedFileCount": { "type": "integer", "minimum": 0 },
+            "selectedBytes": { "type": "integer", "minimum": 0 },
+            "unresolvedReferenceCount": { "type": "integer", "minimum": 0 },
+            "budgetUtilization": { "type": ["object", "null"] }
+          }
+        },
+        "readiness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outcome", "commandCount", "passedCount", "failedCount", "mutationDetected", "commands"],
+          "properties": {
+            "outcome": { "enum": ["not_configured", "passed", "failed"] },
+            "commandCount": { "type": "integer", "minimum": 0 },
+            "passedCount": { "type": "integer", "minimum": 0 },
+            "failedCount": { "type": "integer", "minimum": 0 },
+            "mutationDetected": { "type": "boolean" },
+            "commands": { "type": "array", "items": { "type": "object" } }
+          }
+        },
+        "executorContextGap": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "const": "context_gap" },
+                "message": { "type": "string", "minLength": 1 }
+              }
+            }
+          ]
+        }
       }
     },
     "executorSelfReport": { "$ref": "codex-worker-result.schema.json" },
