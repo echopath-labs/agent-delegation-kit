@@ -11,9 +11,9 @@ const MANIFEST_FIELDS = new Set([
 ]);
 const ALLOWED_TOP_LEVEL = new Set([
   ".agents", ".git", ".github", ".gitignore", ".npmignore", "CHANGELOG.md",
-  "CONTRIBUTING.md", "LICENSE", "README.md", "RELEASING.md", "SECURITY.md",
-  "plugin.json", "package.json", "skills", "contracts", "hosts", "executors",
-  "adapters", "bin", "src", "scripts", "test", "examples", "docs", "public-files.json"
+  "AGENTS.md", "CONTRIBUTING.md", "LICENSE", "README.md", "RELEASING.md", "SECURITY.md",
+  "plugin.json", "package.json", "skills", "packages", "bin", "scripts",
+  "test", "examples", "docs", "public-files.json", "support-matrix.json"
 ]);
 const PRIVATE_NAMES = new Set(["openspec", "opendomain", ".pi", "auth.json", ".ds_store", "node_modules"]);
 const SENSITIVE_EXTENSIONS = /\.(?:pem|key|p12|pfx|log|patch|diff|har)$/iu;
@@ -23,6 +23,7 @@ const ALLOWED_ACTIONS = new Set([
 ]);
 const REVIEWED_WORKFLOW_SHA256 = "6ef860d3bf95bf059a1dcc5e9569cdc46fb277411ef7bef55447c9d3916d6533";
 const REQUIRED_PREVIEW_FILES = [
+  "AGENTS.md",
   "CHANGELOG.md",
   "RELEASING.md",
   "SECURITY.md",
@@ -190,6 +191,11 @@ export async function validatePackage(root) {
     for (const skill of skills) {
       const skillFile = path.join(skillsRoot, skill.name, "SKILL.md");
       if (!(await pathExists(skillFile))) errors.push(`skills/${skill.name}/SKILL.md is missing.`);
+      if (skill.name === "codex-delegated-execution") {
+        const wrapper = path.join(skillsRoot, skill.name, "scripts", "agent-delegation-kit.mjs");
+        if (!(await pathExists(wrapper))) errors.push("The Codex delegation Skill-local wrapper is missing.");
+        else if (((await stat(wrapper)).mode & 0o111) === 0) errors.push("The Codex delegation Skill-local wrapper must be executable.");
+      }
     }
   }
 
@@ -215,6 +221,7 @@ export async function validatePackage(root) {
   }
 
   for (const contract of [
+    "adapter-support-matrix.schema.json",
     "task-envelope.schema.json",
     "context-manifest.schema.json",
     "execution-result.schema.json",
@@ -222,9 +229,9 @@ export async function validatePackage(root) {
     "host-review-packet.schema.json"
   ]) {
     try {
-      JSON.parse(await readFile(path.join(resolvedRoot, "contracts", contract), "utf8"));
+      JSON.parse(await readFile(path.join(resolvedRoot, "packages", "contracts", "schemas", contract), "utf8"));
     } catch (error) {
-      errors.push(`contracts/${contract} is missing or invalid JSON: ${error.message}`);
+      errors.push(`packages/contracts/schemas/${contract} is missing or invalid JSON: ${error.message}`);
     }
   }
 

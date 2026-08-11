@@ -4,10 +4,10 @@ import { access, appendFile, mkdir, mkdtemp, readFile, symlink, writeFile } from
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { archiveAndCleanupTerminalTask, recordTerminalDecision } from "../src/codex/actions.mjs";
-import { executeCodexDelegation, prepareCodexDelegation } from "../src/codex/controller.mjs";
-import { buildHostReviewPacket, extractAggregateMetrics, persistPendingReview } from "../src/codex/review.mjs";
-import { authorizeCorrection, readTaskState } from "../src/codex/state.mjs";
+import { archiveAndCleanupTerminalTask, recordTerminalDecision } from "../packages/host-codex/src/actions.mjs";
+import { executeCodexDelegation, prepareCodexDelegation } from "../packages/adapter-codex-codex/src/controller.mjs";
+import { buildHostReviewPacket, extractAggregateMetrics, persistPendingReview } from "../packages/host-codex/src/review.mjs";
+import { authorizeCorrection, readTaskState } from "../packages/executor-codex/src/state.mjs";
 import { createGitRepository, makeEnvelope } from "./helpers.mjs";
 
 const profileRegistry = {
@@ -430,6 +430,21 @@ test("acceptance refuses candidate changes made after host review", async () => 
     recordTerminalDecision(fixture.prepared, review, "accept", "desktop-host-1"),
     (error) => error.code === "stale_review"
   );
+});
+
+test("negative terminal decisions refuse candidate evidence changed after host review", async () => {
+  for (const action of ["reject", "abandon"]) {
+    const fixture = await executeFixture();
+    const candidate = path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt");
+    await writeFile(candidate, "reviewed change\n");
+    const review = await buildHostReviewPacket(fixture.prepared, fixture.execution);
+    review.candidatePatch = review.candidatePatch.replace("reviewed change", "forged archive content");
+    rehashReview(review);
+    await assert.rejects(
+      recordTerminalDecision(fixture.prepared, review, action, "desktop-host-1"),
+      (error) => error.code === "stale_review"
+    );
+  }
 });
 
 test("acceptance refuses a tampered review packet", async () => {

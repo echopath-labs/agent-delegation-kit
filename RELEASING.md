@@ -50,8 +50,9 @@ Before the first public preview:
 
 ## Release Positioning
 
-Describe `0.1.x` as a human-reviewed Public Preview for experienced Codex, Pi,
-Node.js, and Git users. Do not claim unattended, production-ready, complete
+Describe `0.1.x` as a human-reviewed Codex-to-Codex Public Preview for
+experienced Codex, Node.js, and Git users. Describe Codex-to-Pi separately as
+experimental and optional. Do not claim unattended, production-ready, complete
 cross-platform, provider-neutral live reliability, or operating-system sandbox
 guarantees beyond the documented contracts.
 

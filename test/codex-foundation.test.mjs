@@ -3,9 +3,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { checkCodexCompatibility, parseCodexVersion } from "../src/codex/compatibility.mjs";
-import { resolveWorkerProfile, validateWorkerProfiles, workerEnvironment } from "../src/codex/profile.mjs";
-import { validateTaskEnvelope } from "../src/envelope.mjs";
+import { checkCodexCompatibility, parseCodexVersion } from "../packages/executor-codex/src/compatibility.mjs";
+import { resolveWorkerProfile, validateWorkerProfiles, workerEnvironment } from "../packages/executor-codex/src/profile.mjs";
+import { validateTaskEnvelope } from "../packages/contracts/src/envelope.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 

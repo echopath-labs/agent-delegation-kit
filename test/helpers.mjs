@@ -25,7 +25,7 @@ export async function makeMinimalPlugin(root, manifest) {
   await mkdir(path.join(root, ".agents", "plugins"), { recursive: true });
   await mkdir(path.join(root, ".github", "workflows"), { recursive: true });
   await mkdir(path.join(root, "skills", "demo"), { recursive: true });
-  await mkdir(path.join(root, "contracts"), { recursive: true });
+  await mkdir(path.join(root, "packages", "contracts", "schemas"), { recursive: true });
   await writeFile(path.join(root, "plugin.json"), JSON.stringify(manifest, null, 2));
   await writeFile(path.join(root, ".agents", "plugins", "marketplace.json"), JSON.stringify({
     name: "fixture-marketplace",
@@ -33,6 +33,7 @@ export async function makeMinimalPlugin(root, manifest) {
   }, null, 2));
   await writeFile(path.join(root, "skills", "demo", "SKILL.md"), "---\nname: demo\ndescription: Demo skill.\n---\n");
   await writeFile(path.join(root, "CHANGELOG.md"), "# Changelog\n\n## [0.1.0] - Unreleased Public Preview\n");
+  await writeFile(path.join(root, "AGENTS.md"), "# Public repository instructions\n");
   await writeFile(path.join(root, "RELEASING.md"), "# Public Preview Release Checklist\n");
   await writeFile(path.join(root, "SECURITY.md"), "# Security Policy\n");
   await writeFile(path.join(root, ".github", "workflows", "validate.yml"), [
@@ -68,25 +69,28 @@ export async function makeMinimalPlugin(root, manifest) {
     ""
   ].join("\n"));
   for (const contract of [
+    "adapter-support-matrix.schema.json",
     "task-envelope.schema.json",
     "context-manifest.schema.json",
     "execution-result.schema.json",
     "codex-worker-result.schema.json",
     "host-review-packet.schema.json"
   ]) {
-    await writeFile(path.join(root, "contracts", contract), "{}\n");
+    await writeFile(path.join(root, "packages", "contracts", "schemas", contract), "{}\n");
   }
   const files = [
     ".agents/plugins/marketplace.json",
     ".github/workflows/validate.yml",
+    "AGENTS.md",
     "CHANGELOG.md",
     "RELEASING.md",
     "SECURITY.md",
-    "contracts/codex-worker-result.schema.json",
-    "contracts/context-manifest.schema.json",
-    "contracts/execution-result.schema.json",
-    "contracts/host-review-packet.schema.json",
-    "contracts/task-envelope.schema.json",
+    "packages/contracts/schemas/adapter-support-matrix.schema.json",
+    "packages/contracts/schemas/codex-worker-result.schema.json",
+    "packages/contracts/schemas/context-manifest.schema.json",
+    "packages/contracts/schemas/execution-result.schema.json",
+    "packages/contracts/schemas/host-review-packet.schema.json",
+    "packages/contracts/schemas/task-envelope.schema.json",
     "plugin.json",
     "public-files.json",
     "skills/demo/SKILL.md"

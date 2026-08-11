@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/echopath-labs/agent-delegation-kit/main/packages/contracts/schemas/context-manifest.schema.json",
+  "title": "Delegation Context Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "strategy",
+    "analyzers",
+    "selectedFiles",
+    "externalReferences",
+    "unresolvedReferences",
+    "excludedReferences",
+    "totals",
+    "budget",
+    "readiness",
+    "fingerprint"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "strategy": { "const": "dependency-closure" },
+    "analyzers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "const": "node-esm" }
+    },
+    "selectedFiles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/selectedFile" }
+    },
+    "externalReferences": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/externalReference" }
+    },
+    "unresolvedReferences": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/unresolvedReference" }
+    },
+    "excludedReferences": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/excludedReference" }
+    },
+    "totals": { "$ref": "#/$defs/totals" },
+    "budget": { "$ref": "#/$defs/budget" },
+    "readiness": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/readiness" }
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*//)(?!.*(?:^|/)\\./)(?!.*/$)[^\\\\\\u0000]+)$"
+    },
+    "selectedFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relativePath", "sha256", "bytes", "inclusionReasons"],
+      "properties": {
+        "relativePath": { "$ref": "#/$defs/relativePath" },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "inclusionReasons": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/inclusionReason" }
+        }
+      }
+    },
+    "inclusionReason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["explicit", "seed", "dependency", "instruction"]
+        },
+        "parent": { "$ref": "#/$defs/relativePath" },
+        "specifier": { "type": "string", "minLength": 1 }
+      }
+    },
+    "externalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "specifier"],
+      "properties": {
+        "from": { "$ref": "#/$defs/relativePath" },
+        "specifier": { "type": "string", "minLength": 1 }
+      }
+    },
+    "unresolvedReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "specifier", "reason"],
+      "properties": {
+        "from": { "$ref": "#/$defs/relativePath" },
+        "specifier": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "excludedReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "specifier", "reason"],
+      "properties": {
+        "from": { "$ref": "#/$defs/relativePath" },
+        "specifier": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selectedFiles",
+        "selectedBytes",
+        "externalReferences",
+        "unresolvedReferences",
+        "excludedReferences"
+      ],
+      "properties": {
+        "selectedFiles": { "type": "integer", "minimum": 0 },
+        "selectedBytes": { "type": "integer", "minimum": 0 },
+        "externalReferences": { "type": "integer", "minimum": 0 },
+        "unresolvedReferences": { "type": "integer", "minimum": 0 },
+        "excludedReferences": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxFiles", "maxBytes", "maxDepth"],
+      "properties": {
+        "maxFiles": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 67108864 },
+        "maxDepth": { "type": "integer", "minimum": 1, "maximum": 256 }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "commandFingerprint", "timeoutMs", "acceptableExitCodes"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "commandFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "acceptableExitCodes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+        }
+      }
+    }
+  }
+}

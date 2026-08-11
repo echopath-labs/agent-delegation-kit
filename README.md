@@ -3,9 +3,12 @@
 Agent Delegation Kit is a portable, contract-first toolkit for delegating
 bounded engineering work from a coordinating host to a delegated executor.
 
-The supported adapters are Codex-to-Pi and Codex-to-Codex. The contracts are
-agent-neutral so later host and executor adapters can preserve the same scope,
-evidence, and acceptance semantics.
+The first public-preview adapter is Codex-to-Codex: Codex coordinates and
+reviews an independent Codex executor while preserving the Codex harness across
+compatible provider and model routes. Codex-to-Pi remains an explicit
+experimental adapter. The contracts are Agent-neutral so later OpenCode, Pi,
+Cursor, Trae, and other harness adapters can preserve the same scope, evidence,
+and acceptance semantics.
 
 ## Status
 
@@ -20,6 +23,14 @@ Node.js 20 and Codex CLI 0.147.0. The repository configures Ubuntu validation in
 GitHub Actions, but that becomes release evidence only after the workflow runs
 successfully on the public remote. Windows behavior is not yet validated or
 claimed as supported.
+
+| Adapter | Harness | Status | Root Skill |
+| --- | --- | --- | --- |
+| `codex-codex` | Codex | `public-preview` | active |
+| `codex-pi` | Pi | `experimental` | inactive |
+
+[`support-matrix.json`](support-matrix.json) is authoritative when this table,
+package metadata, or another document disagrees.
 
 ## Installation
 
@@ -41,9 +52,14 @@ same root package without changing its contracts.
 
 - Codex CLI 0.147.0 or later for portable Agent Plugins support.
 - Node.js 20 or later.
-- A compatible Pi installation for the Pi adapter, or Codex CLI 0.147.0 or
-  later for the Codex executor.
+- A host-approved Codex worker profile for the public-preview Codex-to-Codex
+  route.
 - Git for repository preflight and postflight evidence.
+
+Pi is not a first-preview prerequisite. It is needed only when a user explicitly
+selects the experimental `codex-pi` route. Run the `support` command or inspect
+[`support-matrix.json`](support-matrix.json) for the authoritative route status
+and route-specific prerequisites.
 
 Provider credentials remain in host-managed environment variables or user
 configuration. Codex executor envelopes select only a named worker profile;
@@ -53,28 +69,28 @@ local registry. A direct profile stores only the credential environment-variable
 name, never its value. Never put credentials in an envelope or committed
 example.
 
-Child processes do not inherit the complete coordinating-host environment. Pi
-receives a disposable home and temporary directory, its dedicated
-`PI_CODING_AGENT_DIR`, and only explicit host grants. Postflight validation
-receives a disposable home and a small tool-discovery environment with no
-ambient credential or proxy variables.
+Child processes do not inherit the complete coordinating-host environment.
+Each selected adapter receives only its task-scoped configuration and explicit
+host grants. Postflight validation receives a disposable home and a small
+tool-discovery environment with no ambient credential or proxy variables.
 
 ## Package Layout
 
 ```text
-plugin.json                     Agent Plugins 1.0 manifest
-skills/                         Portable Agent Skills
-contracts/                      Versioned task and result schemas
-docs/                           Tested optional integration guides
-hosts/codex/                    Codex host boundary
-executors/pi/                   Pi executor boundary
-executors/codex/                Independent Codex executor boundary
-adapters/codex-pi/              Pair-specific integration notes
-adapters/codex-codex/           Codex-to-Codex controller notes
-bin/                            Local command entry point
-src/                            Dependency-free runtime
-test/                           Fake-executor integration tests
-examples/                       Contract examples
+plugin.json                     Agent Plugins 1.0 root manifest
+support-matrix.json             Authoritative adapter support metadata
+skills/                         Portable Codex Agent Skills
+packages/contracts/             Versioned contracts and schemas
+packages/core/                  Product-neutral evidence and context runtime
+packages/host-codex/            Codex host review and acceptance boundary
+packages/executor-codex/        Independent Codex executor boundary
+packages/adapter-codex-codex/   Public-preview Codex-to-Codex adapter
+packages/executor-pi/           Experimental Pi executor boundary
+packages/adapter-codex-pi/      Experimental Codex-to-Pi adapter
+packages/cli/                   Explicit lazy adapter composition
+bin/                            Stable local command entry point
+test/                           Offline deterministic route tests
+examples/                       Credential-free contract examples
 ```
 
 The package intentionally has no `.codex-plugin/plugin.json` and no MCP server.
@@ -87,6 +103,19 @@ Validate the package and run tests:
 npm run check
 ```
 
+Inspect the machine-readable support status without loading an executor:
+
+```bash
+node ./bin/agent-delegation-kit.mjs support
+```
+
+Validate the first public-preview route independently. This command does not
+inspect Pi installation or configuration:
+
+```bash
+npm run check:codex-codex
+```
+
 Verify local plugin discovery without changing the user's installed plugins:
 
 ```bash
@@ -94,28 +123,30 @@ ADK_CODEX_PLUGIN_SMOKE=1 npm run smoke:codex-plugin
 ```
 
 The smoke creates a disposable `CODEX_HOME`, installs from the repository's
-local marketplace, verifies the plugin identity and packaged Skill, and removes
-the temporary home.
+local marketplace, verifies the plugin identity and packaged Skill, invokes the
+Skill-local support wrapper from the installed cache, and removes the temporary
+home. The Skill resolves that wrapper relative to its own installed location;
+it does not assume the user's current directory is this checkout.
 
-Run a delegation envelope:
+Run the experimental Pi adapter only by naming it explicitly:
 
 ```bash
-node ./bin/agent-delegation-kit.mjs run \
+node ./bin/agent-delegation-kit.mjs run-pi \
   --envelope ./examples/task-envelope.json
 ```
 
 The target repository must be clean unless the envelope explicitly records and
-acknowledges every pre-existing dirty path. The adapter invokes Pi without a
-shell, derives changed paths independently from Git, checks the scope allowlist,
-and records validation results.
+acknowledges every pre-existing dirty path. This command is experimental and
+requires an explicit Pi route; it is not loaded by `run-codex`.
 
-### Task envelopes and Pi profiles
+### Experimental Codex-to-Pi route
 
 All repository paths in an envelope are relative to the declared Git root.
 `scope.allowedPaths` grants write authority; `scope.readablePaths` and optional
 planned context control exposure separately. Validation commands are direct
-argument arrays, not shell strings. A Pi task may omit `executionProfile` to use
-Pi's configured default, or supply only non-secret selection metadata:
+argument arrays, not shell strings. Deterministic fixtures always supply an
+explicit provider and model. A user-selected Pi task may use a validated
+host-owned Pi route or supply only non-secret selection metadata:
 
 ```json
 {
@@ -248,6 +279,25 @@ The stored task, profile fingerprint, capsule baseline, context-manifest
 identity when planned, prior result identity, and delegated thread must all
 match. A mismatch fails closed instead of starting a replacement session.
 
+After inspecting the returned review packet and candidate patch, record one
+explicit terminal decision and archive the evidence outside task state:
+
+```bash
+node ./bin/agent-delegation-kit.mjs decide-codex \
+  --task-root /absolute/private/task-state/adk-task-id-uuid \
+  --profiles ./examples/codex-worker-profiles.json \
+  --action accept \
+  --actor coordinating-host-id \
+  --archive-root /absolute/private/review-archive
+```
+
+`accept`, `reject`, and `abandon` are supported. Every terminal decision reruns
+authoritative review checks and refuses stale candidate or host evidence before
+it records the host or human actor, archives the packet and patch, and removes
+terminal task state. Acceptance additionally requires currently eligible host
+evidence. No decision applies the patch to the source repository or commits,
+pushes, tags, publishes, or deploys it.
+
 ### Direct Responses providers
 
 When a provider exposes a Codex-compatible Responses API, a host-owned profile
@@ -378,7 +428,8 @@ Use small tasks, clean repositories, explicit readable and writable path
 allowlists, pre-existing real (non-symlink) private task-state directories, and
 human review. Review archives likewise require a pre-existing real directory
 outside the task root. See
-`adapters/codex-codex/README.md` for profiles, routing, corrections, failure
+[`packages/adapter-codex-codex/README.md`](packages/adapter-codex-codex/README.md)
+for profiles, routing, corrections, failure
 recovery, terminal cleanup, and rollback.
 
 External provider routes remain user-configured preview integrations. Local
@@ -387,9 +438,9 @@ larger requests have also shown intermittent stream disconnections. Prefer
 small, independently reviewable objectives and never infer general provider
 reliability from one successful route.
 
-See [`examples/README.md`](examples/README.md) for end-to-end Pi and Codex
-flows covering completion, blocking, validation failure, correction, review,
-terminal acceptance, and cleanup.
+See [`examples/README.md`](examples/README.md) for the public-preview Codex flow
+and separately labeled experimental Pi flow covering completion, blocking,
+validation failure, correction, review, terminal acceptance, and cleanup.
 
 ## Removal
 

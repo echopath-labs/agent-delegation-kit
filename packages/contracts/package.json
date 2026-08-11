@@ -1,0 +1,12 @@
+{
+  "name": "@agent-delegation-kit/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./envelope": "./src/envelope.mjs",
+    "./errors": "./src/errors.mjs",
+    "./path-policy": "./src/path-policy.mjs",
+    "./schemas/*": "./schemas/*"
+  }
+}

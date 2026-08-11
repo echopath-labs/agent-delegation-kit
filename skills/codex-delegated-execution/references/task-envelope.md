@@ -1,6 +1,6 @@
 # Task Envelope
 
-Use `contracts/task-envelope.schema.json` as the authoritative transport shape.
+Use `packages/contracts/schemas/task-envelope.schema.json` as the authoritative transport shape.
 
 A complete envelope names the objective, expected outcome, target Git root,
 working directory, dirty-tree policy, allowed and forbidden paths, repository

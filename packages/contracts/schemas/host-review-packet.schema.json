@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/echopath-labs/agent-delegation-kit/main/packages/contracts/schemas/host-review-packet.schema.json",
+  "title": "Delegated Work Host Review Packet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "taskId",
+    "lifecycleState",
+    "profile",
+    "contextEvidence",
+    "executorSelfReport",
+    "hostObserved",
+    "validations",
+    "unresolvedRisks",
+    "metrics",
+    "reviewIdentity",
+    "acceptance"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "taskId": { "type": "string", "minLength": 1 },
+    "lifecycleState": {
+      "enum": ["prepared", "running", "awaiting_review", "correction_requested", "accepted", "rejected", "abandoned", "failed"]
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "fingerprint", "effectiveModel"],
+      "properties": {
+        "name": { "type": "string" },
+        "fingerprint": { "type": "string" },
+        "effectiveModel": { "type": ["string", "null"] }
+      }
+    },
+    "contextEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan", "readiness", "executorContextGap"],
+      "properties": {
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "strategy",
+            "fingerprint",
+            "selectedFileCount",
+            "selectedBytes",
+            "unresolvedReferenceCount",
+            "budgetUtilization"
+          ],
+          "properties": {
+            "mode": { "enum": ["explicit", "planned"] },
+            "strategy": { "type": ["string", "null"] },
+            "fingerprint": { "type": ["string", "null"] },
+            "selectedFileCount": { "type": "integer", "minimum": 0 },
+            "selectedBytes": { "type": "integer", "minimum": 0 },
+            "unresolvedReferenceCount": { "type": "integer", "minimum": 0 },
+            "budgetUtilization": { "type": ["object", "null"] }
+          }
+        },
+        "readiness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outcome", "commandCount", "passedCount", "failedCount", "mutationDetected", "commands"],
+          "properties": {
+            "outcome": { "enum": ["not_configured", "passed", "failed"] },
+            "commandCount": { "type": "integer", "minimum": 0 },
+            "passedCount": { "type": "integer", "minimum": 0 },
+            "failedCount": { "type": "integer", "minimum": 0 },
+            "mutationDetected": { "type": "boolean" },
+            "commands": { "type": "array", "items": { "type": "object" } }
+          }
+        },
+        "executorContextGap": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "const": "context_gap" },
+                "message": { "type": "string", "minLength": 1 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "executorSelfReport": { "$ref": "codex-worker-result.schema.json" },
+    "hostObserved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "changedPaths", "scopeBreaches", "candidatePatchSha256", "evidenceAvailable", "privateControlChanged", "credentialEvidenceSafe"],
+      "properties": {
+        "baseline": { "type": "string" },
+        "changedPaths": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "scopeBreaches": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "candidatePatchSha256": { "type": ["string", "null"] },
+        "evidenceAvailable": { "type": "boolean" },
+        "privateControlChanged": { "type": "boolean" },
+        "credentialEvidenceSafe": { "type": "boolean" }
+      }
+    },
+    "validations": { "type": "array", "items": { "type": "object" } },
+    "unresolvedRisks": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "metrics": { "type": "object" },
+    "reviewIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "stateRevision",
+        "correctionSequence",
+        "resultIdentity",
+        "privateControlFingerprint",
+        "candidatePatchSha256",
+        "fingerprint"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "stateRevision": { "type": "integer", "minimum": 0 },
+        "correctionSequence": { "type": "integer", "minimum": 0 },
+        "resultIdentity": { "type": ["string", "null"] },
+        "privateControlFingerprint": { "type": "string", "minLength": 1 },
+        "candidatePatchSha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "eligible", "decidedBy"],
+      "properties": {
+        "status": { "enum": ["pending", "accepted", "rejected", "correction_requested", "abandoned"] },
+        "eligible": { "type": "boolean" },
+        "decidedBy": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

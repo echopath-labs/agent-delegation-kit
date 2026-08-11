@@ -13,12 +13,12 @@ import {
   preflightCapsule,
   verifyContextManifestIdentity,
   verifySourceUnchanged
-} from "../src/codex/capsule.mjs";
-import { validateTaskEnvelope } from "../src/envelope.mjs";
-import { resolveRepository } from "../src/git.mjs";
+} from "../packages/executor-codex/src/capsule.mjs";
+import { validateTaskEnvelope } from "../packages/contracts/src/envelope.mjs";
+import { resolveRepository } from "../packages/core/src/git.mjs";
 import { createDirectory, createGitRepository, makeEnvelope } from "./helpers.mjs";
 
-const workerResultSchemaPath = fileURLToPath(new URL("../contracts/codex-worker-result.schema.json", import.meta.url));
+const workerResultSchemaPath = fileURLToPath(new URL("../packages/contracts/schemas/codex-worker-result.schema.json", import.meta.url));
 const execFileAsync = promisify(execFile);
 const profile = { name: "worker", external: true };
 

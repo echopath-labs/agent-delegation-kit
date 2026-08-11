@@ -10,7 +10,7 @@ import {
   executeCodexDelegation,
   loadCodexDelegation,
   prepareCodexDelegation
-} from "../src/codex/controller.mjs";
+} from "../packages/adapter-codex-codex/src/controller.mjs";
 import { createGitRepository, makeEnvelope } from "./helpers.mjs";
 
 const execFileAsync = promisify(execFile);

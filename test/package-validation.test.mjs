@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { validatePackage } from "../scripts/validate-package.mjs";
+import { validateArchitecture } from "../scripts/validate-architecture.mjs";
 import { makeMinimalPlugin } from "./helpers.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -15,6 +16,78 @@ const validManifest = {
 
 test("current package layout is valid", async () => {
   assert.deepEqual(await validatePackage(packageRoot), []);
+});
+
+test("current monorepo ownership and support matrix are valid", async () => {
+  assert.deepEqual(await validateArchitecture(packageRoot), []);
+});
+
+test("architecture validation rejects Codex-to-Pi coupling", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "adk-architecture-"));
+  await cp(path.join(packageRoot, "packages"), path.join(root, "packages"), { recursive: true });
+  await cp(path.join(packageRoot, "package.json"), path.join(root, "package.json"));
+  await cp(path.join(packageRoot, "support-matrix.json"), path.join(root, "support-matrix.json"));
+  const target = path.join(root, "packages", "executor-codex", "src", "forbidden.mjs");
+  await writeFile(target, "import '../../executor-pi/src/executor.mjs';\n");
+  const errors = await validateArchitecture(root);
+  assert(errors.some((item) => item.includes("couples the Codex route")));
+  await rm(root, { recursive: true });
+});
+
+test("architecture validation rejects unowned and computed imports", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "adk-architecture-"));
+  await cp(path.join(packageRoot, "packages"), path.join(root, "packages"), { recursive: true });
+  await cp(path.join(packageRoot, "package.json"), path.join(root, "package.json"));
+  await cp(path.join(packageRoot, "support-matrix.json"), path.join(root, "support-matrix.json"));
+  const sourceRoot = path.join(root, "packages", "executor-codex", "src");
+  await writeFile(path.join(sourceRoot, "computed.mjs"), "const target='./worker.mjs'; import(target);\n");
+  await writeFile(path.join(sourceRoot, "external.mjs"), "import 'third-party-package';\n");
+  await writeFile(path.join(sourceRoot, "escaped.mjs"), "import '../../../outside.mjs';\n");
+  const errors = await validateArchitecture(root);
+  assert(errors.some((item) => item.includes("non-literal dynamic import")));
+  assert(errors.some((item) => item.includes("undeclared external specifier")));
+  assert(errors.some((item) => item.includes("outside the package ownership tree")));
+  await rm(root, { recursive: true });
+});
+
+test("architecture validation rejects support status drift", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "adk-architecture-"));
+  await cp(path.join(packageRoot, "packages"), path.join(root, "packages"), { recursive: true });
+  await cp(path.join(packageRoot, "package.json"), path.join(root, "package.json"));
+  const matrix = JSON.parse(await readFile(path.join(packageRoot, "support-matrix.json"), "utf8"));
+  matrix.routes[1].status = "public-preview";
+  await writeFile(path.join(root, "support-matrix.json"), JSON.stringify(matrix));
+  const errors = await validateArchitecture(root);
+  assert(errors.some((item) => item.includes("codex-pi has unexpected status")));
+  await rm(root, { recursive: true });
+});
+
+test("architecture validation rejects prerequisite and live-smoke drift", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "adk-architecture-"));
+  await cp(path.join(packageRoot, "packages"), path.join(root, "packages"), { recursive: true });
+  await cp(path.join(packageRoot, "package.json"), path.join(root, "package.json"));
+  const matrix = JSON.parse(await readFile(path.join(packageRoot, "support-matrix.json"), "utf8"));
+  matrix.routes[0].prerequisites = ["Pi must be installed"];
+  matrix.routes[0].liveSmoke = "npm run smoke:pi";
+  await writeFile(path.join(root, "support-matrix.json"), JSON.stringify(matrix));
+  const errors = await validateArchitecture(root);
+  assert(errors.some((item) => item.includes("codex-codex has unexpected prerequisites")));
+  assert(errors.some((item) => item.includes("codex-codex has unexpected liveSmoke")));
+  await rm(root, { recursive: true });
+});
+
+test("architecture validation rejects retired contract schema identifiers", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "adk-architecture-"));
+  await cp(path.join(packageRoot, "packages"), path.join(root, "packages"), { recursive: true });
+  await cp(path.join(packageRoot, "package.json"), path.join(root, "package.json"));
+  await cp(path.join(packageRoot, "support-matrix.json"), path.join(root, "support-matrix.json"));
+  const schemaPath = path.join(root, "packages", "contracts", "schemas", "task-envelope.schema.json");
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  schema.$id = "https://github.com/echopath-labs/agent-delegation-kit/contracts/task-envelope.schema.json";
+  await writeFile(schemaPath, JSON.stringify(schema));
+  const errors = await validateArchitecture(root);
+  assert(errors.some((item) => item.includes("task-envelope.schema.json has a non-canonical $id")));
+  await rm(root, { recursive: true });
 });
 
 test("invalid manifest schema is rejected", async () => {

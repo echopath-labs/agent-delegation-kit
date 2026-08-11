@@ -7,6 +7,10 @@ Security fixes are provided on a best-effort basis for the latest published
 `0.1.x` release. Unreleased commits, older preview snapshots, unattended use,
 and locally modified adapters are not supported release channels.
 
+The supported preview route is Codex-to-Codex. Codex-to-Pi security controls are
+retained and tested because its source is public, but that adapter remains
+experimental and is not activated by the root Skill.
+
 ## Reporting A Vulnerability
 
 Use GitHub private vulnerability reporting for this repository:

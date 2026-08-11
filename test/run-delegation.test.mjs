@@ -5,15 +5,18 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { validateTaskEnvelope } from "../src/envelope.mjs";
-import { parseStatusPaths } from "../src/git.mjs";
-import { runDelegation } from "../src/run-delegation.mjs";
+import { validateTaskEnvelope } from "../packages/contracts/src/envelope.mjs";
+import { parseStatusPaths } from "../packages/core/src/git.mjs";
+import { runDelegation } from "../packages/adapter-codex-pi/src/run-delegation.mjs";
 import { createDirectory, createGitRepository, makeEnvelope } from "./helpers.mjs";
 
 const fakePi = fileURLToPath(new URL("./fixtures/fake-pi.mjs", import.meta.url));
 const cli = fileURLToPath(new URL("../bin/agent-delegation-kit.mjs", import.meta.url));
 const execFileAsync = promisify(execFile);
-const execute = (envelope, scenario) => runDelegation(envelope, {
+const withFixturePiRoute = (envelope) => envelope.executionProfile === undefined
+  ? { ...envelope, executionProfile: { provider: "fixture-provider", model: "fixture-model" } }
+  : envelope;
+const execute = (envelope, scenario) => runDelegation(withFixturePiRoute(envelope), {
   executorCommand: fakePi,
   executorEnv: { FAKE_PI_SCENARIO: scenario }
 });
@@ -31,13 +34,34 @@ test("successful execution remains pending host acceptance", async () => {
 test("CLI reads an envelope file and emits a structured result", async () => {
   const root = await createGitRepository();
   const envelopeFile = path.join(root, "..", `envelope-${path.basename(root)}.json`);
-  await writeFile(envelopeFile, JSON.stringify(makeEnvelope(root)));
-  const { stdout } = await execFileAsync(process.execPath, [cli, "run", "--envelope", envelopeFile, "--executor", fakePi], {
+  await writeFile(envelopeFile, JSON.stringify(withFixturePiRoute(makeEnvelope(root))));
+  const { stdout } = await execFileAsync(process.execPath, [cli, "run-pi", "--envelope", envelopeFile, "--executor", fakePi], {
     env: { ...process.env, FAKE_PI_SCENARIO: "success" }
   });
   const result = JSON.parse(stdout);
   assert.equal(result.status, "completed");
   assert.equal(result.hostAcceptance.status, "pending");
+});
+
+test("CLI support metadata is sanitized and keeps Pi experimental", async () => {
+  const { stdout } = await execFileAsync(process.execPath, [cli, "support"], {
+    env: { PATH: process.env.PATH, HOME: path.dirname(cli) }
+  });
+  const support = JSON.parse(stdout);
+  assert.deepEqual(support.routes.map(({ id, status }) => ({ id, status })), [
+    { id: "codex-codex", status: "public-preview" },
+    { id: "codex-pi", status: "experimental" }
+  ]);
+  assert.equal(support.routes[0].rootPluginActivation, true);
+  assert.equal(support.routes[1].rootPluginActivation, false);
+  assert.doesNotMatch(stdout, /credentialEnv|api[_-]?key|token/i);
+});
+
+test("CLI refuses the removed ambiguous run command", async () => {
+  await assert.rejects(
+    execFileAsync(process.execPath, [cli, "run", "--envelope", "unused.json"]),
+    (error) => /Use 'run-pi' explicitly/.test(error.stderr)
+  );
 });
 
 test("missing required envelope field is rejected before execution", () => {
@@ -149,7 +173,7 @@ test("missing validation executable is recorded as not run", async () => {
 
 test("missing executor executable is normalized as failed", async () => {
   const root = await createGitRepository();
-  const result = await runDelegation(makeEnvelope(root), {
+  const result = await runDelegation(withFixturePiRoute(makeEnvelope(root)), {
     executorCommand: "definitely-not-an-installed-executor"
   });
   assert.equal(result.status, "failed");
@@ -193,7 +217,7 @@ test("pre-existing Git object mutation is independently rejected", async () => {
   const { stdout } = await execFileAsync("git", ["hash-object", "-w", source], { cwd: root });
   await rm(source);
   const objectId = stdout.trim();
-  const result = await runDelegation(makeEnvelope(root), {
+  const result = await runDelegation(withFixturePiRoute(makeEnvelope(root)), {
     executorCommand: fakePi,
     executorEnv: {
       FAKE_PI_SCENARIO: "git-object-breach",
@@ -224,9 +248,9 @@ test("Pi configuration credentials are redacted and make contaminated source ine
 test("Pi credential-bearing paths are omitted from retained evidence and rejected", async () => {
   const root = await createGitRepository();
   const secret = "opaque-path-secret-value";
-  const result = await runDelegation(makeEnvelope(root, {
+  const result = await runDelegation(withFixturePiRoute(makeEnvelope(root, {
     scope: { allowedPaths: ["*.txt"], forbiddenPaths: [] }
-  }), {
+  })), {
     executorCommand: fakePi,
     executorEnv: { FAKE_PI_SCENARIO: "credential-path", FAKE_PI_PATH_SECRET: secret }
   });
@@ -273,7 +297,7 @@ test("Pi executor grants are snapshotted exactly once", async () => {
       return reads === 1 ? firstSecret : secondSecret;
     }
   });
-  const result = await runDelegation(makeEnvelope(root), { executorCommand: fakePi, executorEnv });
+  const result = await runDelegation(withFixturePiRoute(makeEnvelope(root)), { executorCommand: fakePi, executorEnv });
   assert.equal(reads, 1);
   assert.equal(result.status, "rejected");
   assert.ok(result.scope.breaches.includes("evidence:credential value detected"));
@@ -295,7 +319,7 @@ test("Pi validation output redacts the complete executor and validation grant un
       timeoutMs: 10_000
     }]
   });
-  const result = await runDelegation(envelope, {
+  const result = await runDelegation(withFixturePiRoute(envelope), {
     executorCommand: fakePi,
     executorEnv: { FAKE_PI_SCENARIO: "encoded-secret", FAKE_PI_SECRET: secret }
   });

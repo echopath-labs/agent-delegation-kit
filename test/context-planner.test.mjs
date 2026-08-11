@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { analyzeSource } from "../src/context/analyzer.mjs";
-import { analyzeNodeEsm } from "../src/context/node-esm.mjs";
-import { planDelegationContext } from "../src/context/planner.mjs";
+import { analyzeSource } from "../packages/core/src/context/analyzer.mjs";
+import { analyzeNodeEsm } from "../packages/core/src/context/node-esm.mjs";
+import { planDelegationContext } from "../packages/core/src/context/planner.mjs";
 import { createDirectory, makeEnvelope } from "./helpers.mjs";
 
 async function fixture(files) {

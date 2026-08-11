@@ -3,16 +3,16 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } 
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { checkRouterHealth } from "../src/codex/router.mjs";
+import { checkRouterHealth } from "../packages/executor-codex/src/router.mjs";
 import {
   authorizeCorrection,
   createTaskState,
   recordWorkerResult,
   transitionTaskState
-} from "../src/codex/state.mjs";
-import { resolveWorkerProfile } from "../src/codex/profile.mjs";
-import { sensitiveUrlValues } from "../src/redact.mjs";
-import { buildCodexExecInvocation, directProviderConfig, parseCodexEventStream, prepareTaskCodexHome, runCodexWorker } from "../src/codex/worker.mjs";
+} from "../packages/executor-codex/src/state.mjs";
+import { resolveWorkerProfile } from "../packages/executor-codex/src/profile.mjs";
+import { sensitiveUrlValues } from "../packages/core/src/redact.mjs";
+import { buildCodexExecInvocation, directProviderConfig, parseCodexEventStream, prepareTaskCodexHome, runCodexWorker } from "../packages/executor-codex/src/worker.mjs";
 import { makeEnvelope } from "./helpers.mjs";
 
 const profile = {

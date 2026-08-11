@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/echopath-labs/agent-delegation-kit/main/packages/contracts/schemas/task-envelope.schema.json",
+  "title": "Agent Delegation Task Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "taskId",
+    "objective",
+    "expectedOutcome",
+    "repository",
+    "scope",
+    "instructions",
+    "constraints",
+    "validation",
+    "requiredEvidence",
+    "stopConditions",
+    "resultFormat"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "taskId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "objective": { "type": "string", "minLength": 1, "maxLength": 16384 },
+    "expectedOutcome": { "type": "string", "minLength": 1, "maxLength": 16384 },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "workingDirectory", "dirtyTree"],
+      "properties": {
+        "root": { "type": "string", "minLength": 1, "maxLength": 16384 },
+        "workingDirectory": { "type": "string", "minLength": 1, "maxLength": 16384 },
+        "dirtyTree": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allow", "acknowledgedPaths"],
+          "properties": {
+            "allow": { "type": "boolean" },
+            "acknowledgedPaths": {
+              "type": "array",
+              "maxItems": 10000,
+              "items": { "type": "string", "minLength": 1, "maxLength": 16384 },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedPaths", "forbiddenPaths"],
+      "properties": {
+        "allowedPaths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": { "type": "string", "minLength": 1, "maxLength": 16384 },
+          "uniqueItems": true
+        },
+        "forbiddenPaths": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "type": "string", "minLength": 1, "maxLength": 16384 },
+          "uniqueItems": true
+        },
+        "readablePaths": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "type": "string", "minLength": 1, "maxLength": 16384 },
+          "uniqueItems": true
+        },
+        "discoverablePaths": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/normalizedGlob" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "contextPlanning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "seeds", "analyzers", "budget", "readiness"],
+      "properties": {
+        "strategy": { "const": "dependency-closure" },
+        "seeds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/normalizedLiteralPath" },
+          "uniqueItems": true
+        },
+        "analyzers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "const": "node-esm" },
+          "uniqueItems": true
+        },
+        "budget": { "$ref": "#/$defs/budget" },
+        "readiness": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/readiness" }
+        }
+      }
+    },
+    "instructions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": { "type": "string", "minLength": 1, "maxLength": 16384 }
+    },
+    "constraints": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "type": "string", "minLength": 1, "maxLength": 16384 }
+    },
+    "validation": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "argv"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "argv": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384,
+              "pattern": "^(?!(?:--?)?(?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|access[_-]?token|auth(?:entication)?[_-]?token|token|password|secret|credential)(?:[_-][A-Za-z0-9]+)*(?:=|$))(?!.*(?:authorization|proxy-authorization)\\s*:\\s*(?:bearer|basic)\\s+\\S+)(?!\\s*(?:bearer|basic)\\s+\\S+)(?!.*https?:\\/\\/[^\\/\\s:@]+:[^\\/\\s@]+@).+$"
+            }
+          },
+          "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 3600000 }
+        }
+      }
+    },
+    "requiredEvidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "enum": ["git_preflight", "changed_paths", "validation_results", "executor_report"]
+      },
+      "uniqueItems": true
+    },
+    "stopConditions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": { "type": "string", "minLength": 1, "maxLength": 16384 }
+    },
+    "resultFormat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" }
+      }
+    },
+    "executionProfile": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "type": "string", "minLength": 1 },
+            "model": { "type": "string", "minLength": 1 },
+            "reasoning": {
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+            }
+          }
+        }
+      ]
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "exposureMode": { "enum": ["sanitized", "trusted-worktree"] },
+        "trustedWorktreeAcknowledged": { "type": "boolean" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["contextPlanning"] },
+      "then": {
+        "properties": {
+          "scope": {
+            "required": ["discoverablePaths"],
+            "properties": { "discoverablePaths": { "minItems": 1 } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["contextPlanning", "execution"],
+        "properties": {
+          "execution": {
+            "required": ["exposureMode"],
+            "properties": { "exposureMode": { "const": "trusted-worktree" } }
+          }
+        }
+      },
+      "then": { "not": {} }
+    }
+  ],
+  "$defs": {
+    "normalizedGlob": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:\\.|(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*//)(?!.*(?:^|/)\\./)(?!.*/$)[^\\\\\\u0000]+)$"
+    },
+    "normalizedLiteralPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\.$)(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*//)(?!.*(?:^|/)\\./)(?!.*/$)(?!.*[*?\\[\\]{}])[^\\\\\\u0000]+$"
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxFiles", "maxBytes", "maxDepth"],
+      "properties": {
+        "maxFiles": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 67108864 },
+        "maxDepth": { "type": "integer", "minimum": 1, "maximum": 256 }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "argv", "timeoutMs", "acceptableExitCodes"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "argv": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 256,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384,
+          "pattern": "^(?!(?:--?)?(?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|access[_-]?token|auth(?:entication)?[_-]?token|token|password|secret|credential)(?:[_-][A-Za-z0-9]+)*(?:=|$))(?!.*(?:authorization|proxy-authorization)\\s*:\\s*(?:bearer|basic)\\s+\\S+)(?!\\s*(?:bearer|basic)\\s+\\S+)(?!.*https?:\\/\\/[^\\/\\s:@]+:[^\\/\\s@]+@).+$"
+          },
+          "prefixItems": [{
+            "type": "string",
+            "pattern": "^(?!(?:.*[/\\\\])?(?:sh|bash|zsh|dash|ksh|fish|csh|tcsh|cmd|powershell|pwsh)(?:\\.exe)?$).+$"
+          }]
+        },
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+        "acceptableExitCodes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+        }
+      }
+    }
+  }
+}
