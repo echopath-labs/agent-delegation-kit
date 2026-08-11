@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { runDelegation } from "../../src/run-delegation.mjs";
+import { runDelegation } from "../../packages/adapter-codex-pi/src/run-delegation.mjs";
 import { createGitRepository, makeEnvelope } from "../helpers.mjs";
 
 const enabled = process.env.ADK_PI_SMOKE === "1";

@@ -6,7 +6,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
-import { MINIMUM_CODEX_VERSION, parseCodexVersion } from "../../src/codex/compatibility.mjs";
+import { MINIMUM_CODEX_VERSION, parseCodexVersion } from "../../packages/executor-codex/src/compatibility.mjs";
 
 const execFileAsync = promisify(execFile);
 const enabled = process.env.ADK_CODEX_PLUGIN_SMOKE === "1";
@@ -88,6 +88,10 @@ test("opt-in supported Codex discovers the portable plugin and packaged skill", 
     const skills = await findNamedFiles(path.dirname(matchingManifest), "SKILL.md");
     const skill = skills.find((file) => file.endsWith(path.join("skills", "codex-delegated-execution", "SKILL.md")));
     assert.ok(skill, "Installed plugin cache does not contain the expected delegated-execution skill.");
+    const wrapper = path.join(path.dirname(skill), "scripts", "agent-delegation-kit.mjs");
+    const wrapperSupport = JSON.parse((await runCodex(process.execPath, [wrapper, "support"], environment)).stdout);
+    assert.equal(wrapperSupport.routes[0].id, "codex-codex", "Installed Skill-local wrapper did not resolve the packaged CLI.");
+    assert.equal(wrapperSupport.routes[0].status, "public-preview");
     context.diagnostic(JSON.stringify({
       codexVersion: version,
       marketplace: "agent-delegation-kit-local",

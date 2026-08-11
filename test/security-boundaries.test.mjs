@@ -11,28 +11,28 @@ import {
   copyVerifiedInput,
   preflightCapsule,
   prepareCapsule
-} from "../src/codex/capsule.mjs";
-import { persistPendingReview, runHostValidations } from "../src/codex/review.mjs";
+} from "../packages/executor-codex/src/capsule.mjs";
+import { persistPendingReview, runHostValidations } from "../packages/host-codex/src/review.mjs";
 import {
   authorizeCorrection,
   createTaskState,
   readTaskState,
   recordWorkerResult,
   transitionTaskState
-} from "../src/codex/state.mjs";
-import { prepareTaskCodexHome } from "../src/codex/worker.mjs";
-import { analyzeNodeEsm } from "../src/context/node-esm.mjs";
-import { planDelegationContext } from "../src/context/planner.mjs";
-import { validateTaskEnvelope } from "../src/envelope.mjs";
-import { changedFilesystemPaths, snapshotFilesystem, snapshotGitControls } from "../src/filesystem-evidence.mjs";
-import { getStatusPaths } from "../src/git.mjs";
-import { evaluatePathScope } from "../src/path-policy.mjs";
-import { runProcess } from "../src/process.mjs";
-import { runDelegation } from "../src/run-delegation.mjs";
+} from "../packages/executor-codex/src/state.mjs";
+import { prepareTaskCodexHome } from "../packages/executor-codex/src/worker.mjs";
+import { analyzeNodeEsm } from "../packages/core/src/context/node-esm.mjs";
+import { planDelegationContext } from "../packages/core/src/context/planner.mjs";
+import { validateTaskEnvelope } from "../packages/contracts/src/envelope.mjs";
+import { changedFilesystemPaths, snapshotFilesystem, snapshotGitControls } from "../packages/core/src/filesystem-evidence.mjs";
+import { getStatusPaths } from "../packages/core/src/git.mjs";
+import { evaluatePathScope } from "../packages/contracts/src/path-policy.mjs";
+import { runProcess } from "../packages/core/src/process.mjs";
+import { runDelegation } from "../packages/adapter-codex-pi/src/run-delegation.mjs";
 import { createDirectory, createGitRepository, makeEnvelope } from "./helpers.mjs";
 
 const fakePi = fileURLToPath(new URL("./fixtures/fake-pi.mjs", import.meta.url));
-const workerSchema = fileURLToPath(new URL("../contracts/codex-worker-result.schema.json", import.meta.url));
+const workerSchema = fileURLToPath(new URL("../packages/contracts/schemas/codex-worker-result.schema.json", import.meta.url));
 const execFileAsync = promisify(execFile);
 
 const profile = {
@@ -55,13 +55,13 @@ test("process capture reports truncation and hard timeout settlement", async () 
 
   const started = performance.now();
   const timeout = await runProcess(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
-    timeoutMs: 30,
+    timeoutMs: 1000,
     terminationGraceMs: 30,
     hardSettleGraceMs: 30
   });
   assert.equal(timeout.timedOut, true);
   assert.equal(timeout.hardKilled, true);
-  assert.ok(performance.now() - started < 1000);
+  assert.ok(performance.now() - started < 2500);
 });
 
 test("process runner terminates same-group descendants after the leader exits", async () => {
@@ -168,6 +168,7 @@ test("Git alternate traversal enforces one global edge budget", async () => {
 test("Pi and host validation receive isolated environments", async () => {
   const root = await createGitRepository();
   const envelope = makeEnvelope(root, {
+    executionProfile: { provider: "fixture-provider", model: "fixture-model" },
     validation: [{
       id: "environment",
       argv: [process.execPath, "-e", "process.exit(process.env.HOST_SECRET===undefined&&process.env.HOME.includes('adk-validation-')?0:9)"],

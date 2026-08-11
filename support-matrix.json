@@ -1,0 +1,39 @@
+{
+  "$schema": "./packages/contracts/schemas/adapter-support-matrix.schema.json",
+  "schemaVersion": "1.0.0",
+  "routes": [
+    {
+      "id": "codex-codex",
+      "hostPackage": "packages/host-codex",
+      "executorPackage": "packages/executor-codex",
+      "adapterPackage": "packages/adapter-codex-codex",
+      "executionHarness": "codex",
+      "status": "public-preview",
+      "sourceIncluded": true,
+      "rootPluginActivation": true,
+      "prerequisites": [
+        "Node.js 20 or later",
+        "Codex CLI 0.147.0 or later",
+        "a host-approved Codex worker profile"
+      ],
+      "deterministicCheck": "npm run check:codex-codex",
+      "liveSmoke": "npm run smoke:codex-native"
+    },
+    {
+      "id": "codex-pi",
+      "hostPackage": "packages/host-codex",
+      "executorPackage": "packages/executor-pi",
+      "adapterPackage": "packages/adapter-codex-pi",
+      "executionHarness": "pi",
+      "status": "experimental",
+      "sourceIncluded": true,
+      "rootPluginActivation": false,
+      "prerequisites": [
+        "Node.js 20 or later",
+        "an explicit compatible Pi installation and execution profile"
+      ],
+      "deterministicCheck": "npm run check:codex-pi",
+      "liveSmoke": "npm run smoke:pi"
+    }
+  ]
+}

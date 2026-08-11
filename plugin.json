@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "agent-delegation-kit",
   "version": "0.1.0",
-  "description": "Portable contracts and a bounded local adapter for delegating engineering work between AI agents.",
+  "description": "Contract-first bounded delegation from Codex to an independent Codex executor, with isolated future Agent adapters.",
   "author": {
     "name": "EchoPath Labs",
     "url": "https://github.com/echopath-labs"
@@ -13,7 +13,7 @@
   "keywords": [
     "agent-delegation",
     "codex",
-    "pi",
+    "codex-harness",
     "workflow",
     "validation"
   ]

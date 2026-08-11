@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateTaskEnvelope } from "../src/envelope.mjs";
+import { validateTaskEnvelope } from "../packages/contracts/src/envelope.mjs";
 import { makeEnvelope } from "./helpers.mjs";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -125,8 +125,8 @@ test("readiness uses non-shell argv and rejects credential-like arguments", () =
 });
 
 test("public JSON schemas are parseable and expose strict context contracts", async () => {
-  const taskSchema = JSON.parse(await readFile(path.join(packageRoot, "contracts/task-envelope.schema.json"), "utf8"));
-  const manifestSchema = JSON.parse(await readFile(path.join(packageRoot, "contracts/context-manifest.schema.json"), "utf8"));
+  const taskSchema = JSON.parse(await readFile(path.join(packageRoot, "packages/contracts/schemas/task-envelope.schema.json"), "utf8"));
+  const manifestSchema = JSON.parse(await readFile(path.join(packageRoot, "packages/contracts/schemas/context-manifest.schema.json"), "utf8"));
   assert.equal(taskSchema.$schema, "https://json-schema.org/draft/2020-12/schema");
   assert.equal(taskSchema.additionalProperties, false);
   assert.equal(taskSchema.properties.contextPlanning.additionalProperties, false);

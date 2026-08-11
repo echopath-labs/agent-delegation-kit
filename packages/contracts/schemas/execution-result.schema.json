@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/echopath-labs/agent-delegation-kit/main/packages/contracts/schemas/execution-result.schema.json",
+  "title": "Agent Delegation Execution Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "taskId",
+    "status",
+    "summary",
+    "baseline",
+    "changedPaths",
+    "scope",
+    "validations",
+    "executor",
+    "hostAcceptance",
+    "residualRisks"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "taskId": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["completed", "blocked", "failed", "rejected"] },
+    "summary": { "type": "string" },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gitRoot", "branch", "headBefore", "headAfter", "dirtyPathsBefore"],
+      "properties": {
+        "gitRoot": { "type": "string" },
+        "branch": { "type": "string" },
+        "headBefore": { "type": ["string", "null"] },
+        "headAfter": { "type": ["string", "null"] },
+        "dirtyPathsBefore": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "changedPaths": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compliant", "breaches"],
+      "properties": {
+        "compliant": { "type": "boolean" },
+        "breaches": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      }
+    },
+    "validations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "argv", "status", "exitCode", "output", "reason"],
+        "properties": {
+          "id": { "type": "string" },
+          "argv": { "type": "array", "items": { "type": "string" } },
+          "status": { "enum": ["passed", "failed", "not_run"] },
+          "exitCode": { "type": ["integer", "null"] },
+          "output": { "type": "string" },
+          "reason": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "executor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reportedStatus", "exitCode", "signal", "summary"],
+      "properties": {
+        "reportedStatus": { "enum": ["completed", "blocked", "failed", "malformed"] },
+        "exitCode": { "type": ["integer", "null"] },
+        "signal": { "type": ["string", "null"] },
+        "summary": { "type": "string" }
+      }
+    },
+    "hostAcceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "eligible", "decidedBy"],
+      "properties": {
+        "status": { "const": "pending" },
+        "eligible": { "type": "boolean" },
+        "decidedBy": { "type": "null" }
+      }
+    },
+    "residualRisks": { "type": "array", "items": { "type": "string" } }
+  }
+}

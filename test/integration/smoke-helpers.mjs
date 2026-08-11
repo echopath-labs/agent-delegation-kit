@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { archiveAndCleanupTerminalTask, recordTerminalDecision } from "../../src/codex/actions.mjs";
-import { correctCodexDelegation, executeCodexDelegation, prepareCodexDelegation } from "../../src/codex/controller.mjs";
-import { buildHostReviewPacket } from "../../src/codex/review.mjs";
+import { archiveAndCleanupTerminalTask, recordTerminalDecision } from "../../packages/host-codex/src/actions.mjs";
+import { correctCodexDelegation, executeCodexDelegation, prepareCodexDelegation } from "../../packages/adapter-codex-codex/src/controller.mjs";
+import { buildHostReviewPacket } from "../../packages/host-codex/src/review.mjs";
 import { createGitRepository, makeEnvelope } from "../helpers.mjs";
 
 export async function runRealCodexSmoke(profile, diagnostic, scenario = {}) {

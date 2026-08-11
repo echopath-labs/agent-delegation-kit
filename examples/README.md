@@ -4,13 +4,13 @@ These examples illustrate the contract lifecycle. Replace placeholder
 repository paths and configured profile names locally; never add credentials to
 an envelope or commit them with an example.
 
-## 1. Successful Pi delegation
+## 1. Experimental Pi delegation
 
 Copy `task-envelope.json`, set `repository.root` to a clean disposable Git
 repository, keep `scope.allowedPaths` narrow, and run:
 
 ```bash
-node ../bin/agent-delegation-kit.mjs run \
+node ../bin/agent-delegation-kit.mjs run-pi \
   --envelope ./task-envelope.json
 ```
 
@@ -79,8 +79,8 @@ import path from "node:path";
 import {
   archiveAndCleanupTerminalTask,
   recordTerminalDecision
-} from "../src/codex/actions.mjs";
-import { loadCodexDelegation } from "../src/codex/controller.mjs";
+} from "../packages/host-codex/src/actions.mjs";
+import { loadCodexDelegation } from "../packages/adapter-codex-codex/src/controller.mjs";
 
 const prepared = await loadCodexDelegation(taskRoot, profileRegistry);
 const state = JSON.parse(await readFile(prepared.statePath, "utf8"));

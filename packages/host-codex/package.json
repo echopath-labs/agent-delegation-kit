@@ -1,0 +1,10 @@
+{
+  "name": "@agent-delegation-kit/host-codex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./actions": "./src/actions.mjs",
+    "./review": "./src/review.mjs"
+  }
+}

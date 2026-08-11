@@ -1,0 +1,16 @@
+{
+  "name": "@agent-delegation-kit/executor-codex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./capsule": "./src/capsule.mjs",
+    "./compatibility": "./src/compatibility.mjs",
+    "./profile": "./src/profile.mjs",
+    "./readiness": "./src/readiness.mjs",
+    "./result": "./src/result.mjs",
+    "./router": "./src/router.mjs",
+    "./state": "./src/state.mjs",
+    "./worker": "./src/worker.mjs"
+  }
+}

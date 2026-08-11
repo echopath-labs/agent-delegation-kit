@@ -9,8 +9,15 @@ All notable public changes to Agent Delegation Kit are recorded here.
 - Agent Plugins 1.0 root manifest and local marketplace metadata.
 - Agent-neutral delegation, execution-result, evidence, scope-breach, and
   acceptance contracts.
-- Codex-to-Pi bounded local execution.
 - Codex-to-Codex execution through an independent `codex exec` session.
+- A contract-centered internal monorepo with a machine-readable support matrix,
+  isolated host/executor/adapter packages, explicit route commands, and
+  dependency-boundary validation.
+- A Skill-local CLI wrapper with installed-cache discovery, deterministic
+  Codex-to-Codex execution coverage, and explicit terminal decision/archive
+  commands that never integrate source changes automatically.
+- Experimental Codex-to-Pi bounded local execution, isolated from the
+  public-preview Codex route and loaded only through `run-pi`.
 - Sanitized capsules, optional planned Node.js ESM context, deterministic
   context manifests, readiness checks, and identity-bound corrections.
 - Native, optional loopback-router, and direct Responses Codex routes without a
@@ -79,7 +86,7 @@ All notable public changes to Agent Delegation Kit are recorded here.
 - Local validation has been completed on macOS. Ubuntu validation becomes
   release evidence only after the public GitHub Actions workflow passes.
 - Windows behavior has not been validated and is not claimed as supported.
-- Pi and external-provider behavior depends on user-owned installation,
+- Experimental Pi and external-provider behavior depends on user-owned installation,
   configuration, credentials, provider compatibility, and route reliability.
 - Larger external Responses requests have shown intermittent stream
   disconnections in local dogfood; users should prefer small, independently
