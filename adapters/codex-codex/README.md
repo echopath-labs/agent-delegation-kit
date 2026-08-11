@@ -32,9 +32,14 @@ referenced by `executionProfile` in the envelope. A profile may contain:
 Direct providers require an explicit model and `external: true`, and cannot be
 combined with `codexProfile` or `router`. Credential values, arbitrary
 environment variables, task-supplied executables, non-loopback routers, and
-silent fallback are rejected. Native/router task homes link existing
-host-managed Codex configuration as before. Direct-provider task homes instead
-materialize a deterministic private base configuration and never inherit global
+silent fallback are rejected. Native task homes use a generated minimal
+configuration. Custom named/router routes require a credential-free selected
+snapshot at `$CODEX_HOME/<codexProfile>.config.toml`; only the selected profile
+and model-provider tables are projected. Supported native authentication fields
+are refreshed into private task state before each execution or correction,
+while unrelated global MCP servers, tools, tables, and authentication fields
+are omitted. Direct-provider task homes
+materialize a deterministic private base configuration and inherit no global
 Codex authentication or configuration. The direct configuration also declares
 only the exact disposable capsule as a trusted Codex project so Codex does not
 rewrite task identity on first use; correction verifies those exact bytes and
@@ -44,7 +49,9 @@ the envelope, configuration, prompt, result, metrics, or public examples.
 ## Native, direct, and optional bridge routing
 
 Native execution needs no router. Set a host-owned Codex profile and model alias
-that already work with `codex exec`.
+that already work with `codex exec`. If the route needs non-default Codex
+configuration, maintain the selected credential-free snapshot described above;
+do not copy the complete global `config.toml`.
 
 A provider that exposes the Responses protocol can use the direct profile shown
 in `examples/codex-worker-profiles.json`. The host environment must contain the
@@ -52,6 +59,10 @@ variable named by `credentialEnv`; its value is passed only to the Codex worker.
 The generated task configuration makes the route available to both initial
 `codex exec` and `codex exec resume` without mutating or depending on global
 provider configuration.
+
+For the tested OpenCode Go / GPT-5.6 Luna direct route, use the copy-safe
+profile and full first-run procedure in `docs/opencode-go-luna.md`. The guide is
+provider-specific documentation, not a fallback policy or package dependency.
 
 Optional local protocol conversion uses the existing router contract: define
 the route in Codex or bridge configuration, keep credentials there, select its
@@ -92,6 +103,12 @@ separate valid executor projection whose repository root points to the capsule,
 not the source checkout. The root is a stable virtual identity for deterministic
 baseline hashing; worker commands still run from the real capsule directory.
 Preparation fails if another projected field would retain the source root.
+Authoritative Git metadata stays under private task control. Host postflight
+addresses it explicitly and treats the executor-visible `.git` pointer as
+untrusted evidence. Bounded filesystem snapshots independently cover ignored
+and index-hidden paths in the capsule and source tree. A separate bounded
+source Git-control baseline includes configuration, refs, indexes, hooks,
+objects, and packs and is checked again after host validation.
 
 Sanitized tasks may use either exact explicit context or bounded planned
 context. Planned mode keeps `readablePaths` exact, uses `discoverablePaths` only
@@ -115,10 +132,44 @@ context-plan identity and aggregates, readiness, executor-reported context gaps,
 host-run validations, unresolved risks, and privacy-safe aggregate metrics.
 Completion remains `pending` even when eligible.
 
+The pending packet carries a review identity over the lifecycle revision,
+correction sequence, result identity, private-control fingerprint, packet, and
+candidate patch. Acceptance recollects source and candidate evidence and uses a
+matching state transition, so a changed candidate, correction request, or
+tampered review cannot reuse an older approval.
+
+At acceptance time the host rebuilds that review from the persisted
+executor-report identity, current candidate/source evidence, and a new
+host-validation run. The caller-supplied eligibility flag is never sufficient.
+Lifecycle state is HMAC-bound to a host-private per-task key outside the task
+directory, and the terminal decision receives a new identity covering its
+action and actor.
+
 Host validations run only after initial executor evidence is eligible. The
 controller then recollects capsule and source integrity and bases the packet,
 candidate patch, scope breaches, and acceptance eligibility on that final
-post-validation evidence.
+post-validation evidence. Validation receives a minimized environment and
+disposable home; any additional environment authority is an explicit host
+grant. Immutable task controls are snapshotted around validation, and exact
+provider/authentication values are redacted from structured worker narratives
+before review persistence. Validation uses newly randomized disposable HOME and
+temporary directories created only after worker completion. Its retained
+arguments, output, and failures are redacted with the worker-plus-validation
+union, which is reapplied after the final lifecycle check. Candidate files,
+host-derived paths, and patch bytes are also checked for every exact worker or
+validation value, including nonempty values shorter than four characters.
+Accepted raw and normalized provider authority, hostname, labels, and
+nontrivial path components join the same inventory; percent-encoded path
+components are decoded and split through a bounded depth, and provider paths
+that remain decodable at the bound or contain malformed percent encoding are
+rejected before worker execution.
+Worker and validation grant sets are HMAC-bound separately to host-private
+lifecycle state; a changed set requires a new task. Contaminated, changed-set,
+or unscannable evidence is omitted and made ineligible without retaining old
+credential plaintext.
+The worker grant set is checked again immediately after `codex exec` exits and
+before any event or structured result is parsed; changed task authentication is
+discarded as untrusted evidence.
 
 Use `correct-codex` only for defects inside the original authority boundary. It
 resumes the exact stored thread when task, profile fingerprint, capsule baseline,
@@ -128,6 +179,9 @@ authority or selected context requires a new task.
 The library exports `recordTerminalDecision` for explicit accept, reject, or
 abandon decisions and `archiveAndCleanupTerminalTask` to archive the review
 packet and patch before deleting only that task's capsule and Codex session.
+Lifecycle changes are serialized by a private task lock. Archive destinations
+must be pre-existing real directories outside the task root; symlink roots are
+rejected.
 These actions do not apply the patch or commit, merge, push, tag, publish, or
 deploy anything.
 

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { DelegationError } from "../errors.mjs";
+import { SensitiveUrlDecodeBudgetError, SensitiveUrlEncodingError, sensitiveUrlValues } from "../redact.mjs";
 
 const PROFILE_KEYS = new Set([
   "codexCommand",
@@ -80,6 +81,17 @@ function validateProvider(value, field) {
   const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname);
   if ((parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) || parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new DelegationError("invalid_worker_profiles", `${field}.baseUrl must use HTTPS or loopback HTTP and must not contain credentials, query parameters, or fragments.`);
+  }
+  try {
+    sensitiveUrlValues(parsed.toString());
+  } catch (error) {
+    if (error instanceof SensitiveUrlDecodeBudgetError) {
+      throw new DelegationError("invalid_worker_profiles", `${field}.baseUrl exceeds the supported URL path decoding bound.`);
+    }
+    if (error instanceof SensitiveUrlEncodingError) {
+      throw new DelegationError("invalid_worker_profiles", `${field}.baseUrl contains unsupported URL path encoding.`);
+    }
+    throw error;
   }
   const wireApi = optionalString(provider.wireApi, `${field}.wireApi`);
   if (wireApi !== "responses") {
@@ -190,7 +202,7 @@ export function requireProviderCredential(profile, source = process.env) {
   if (!profile.provider) return { checked: false };
   const name = profile.provider.credentialEnv;
   const value = source[name];
-  if (typeof value !== "string" || value.trim().length === 0) {
+  if (typeof value !== "string" || value.trim().length < 8) {
     throw new DelegationError("provider_credential_unavailable", `Direct provider credential environment variable is unavailable: ${name}.`);
   }
   return { checked: true, credentialEnv: name };

@@ -7,8 +7,9 @@ import { globToRegExp, normalizeRelativePath } from "../path-policy.mjs";
 import { analyzeSource } from "./analyzer.mjs";
 import { analyzeNodeEsm } from "./node-esm.mjs";
 
-const PRIVATE_SEGMENTS = new Set([".git", ".pi", ".codex", ".ssh", "node_modules", "private", "credentials"]);
+const PRIVATE_SEGMENTS = new Set([".git", ".agent-delegation", ".pi", ".codex", ".ssh", "node_modules", "private", "credentials"]);
 const PRIVATE_FILES = /^(?:\.env(?:\..*)?|auth\.json|credentials?(?:\..*)?|secrets?(?:\..*)?)$/iu;
+const MAX_ANALYZER_REFERENCES = 200_000;
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -41,8 +42,8 @@ function relativePathFor(value) {
   return normalizeRelativePath(value, "relative path");
 }
 
-function matchesAny(relativePath, patterns) {
-  return patterns.some((pattern) => globToRegExp(pattern).test(relativePath));
+function matchesAny(relativePath, patterns, options = {}) {
+  return patterns.some((pattern) => globToRegExp(pattern, options).test(relativePath));
 }
 
 function isPrivatePath(relativePath) {
@@ -124,6 +125,7 @@ async function assertSafeRegularFile(relativePath, repositoryRoot, lstat) {
     throw error("context_repository_unreadable", "Repository root cannot be inspected safely.");
   }
   if (statIsSymlink(rootStat)) throw error("context_symlink", "Repository root contains an unsafe symlink component.");
+  let finalStat;
   for (const [index, segment] of relativePath.split("/").entries()) {
     current = path.join(current, segment);
     let stat;
@@ -140,8 +142,9 @@ async function assertSafeRegularFile(relativePath, repositoryRoot, lstat) {
     if (index === relativePath.split("/").length - 1 && !statIsFile(stat)) {
       throw error("context_not_regular_file", `Required path is not a regular file: ${relativePath}.`);
     }
+    if (index === relativePath.split("/").length - 1) finalStat = stat;
   }
-  return absolute;
+  return { absolute, stat: finalStat };
 }
 
 function dependencyPath(parent, specifier) {
@@ -175,6 +178,40 @@ function sortReferences(references) {
   });
 }
 
+function compareQueue(left, right) {
+  return left.depth - right.depth || left.relativePath.localeCompare(right.relativePath);
+}
+
+function pushQueue(queue, value) {
+  queue.push(value);
+  let index = queue.length - 1;
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (compareQueue(queue[parent], queue[index]) <= 0) break;
+    [queue[parent], queue[index]] = [queue[index], queue[parent]];
+    index = parent;
+  }
+}
+
+function popQueue(queue) {
+  const first = queue[0];
+  const last = queue.pop();
+  if (queue.length === 0) return first;
+  queue[0] = last;
+  let index = 0;
+  while (true) {
+    const left = index * 2 + 1;
+    const right = left + 1;
+    let next = index;
+    if (left < queue.length && compareQueue(queue[left], queue[next]) < 0) next = left;
+    if (right < queue.length && compareQueue(queue[right], queue[next]) < 0) next = right;
+    if (next === index) break;
+    [queue[index], queue[next]] = [queue[next], queue[index]];
+    index = next;
+  }
+  return first;
+}
+
 /**
  * Plan a provider-neutral dependency closure. This function only reads bytes,
  * tokenizes source, and hashes data; it never imports or executes a fixture.
@@ -196,7 +233,9 @@ export async function planDelegationContext(envelope, repositoryRootOrOptions = 
   const records = new Map();
   const externalReferences = new Map();
   const queue = [];
+  const queued = new Set();
   let selectedBytes = 0;
+  let referenceCount = 0;
 
   if (roots.length === 0) throw error("invalid_envelope", "At least one readable path or seed is required.");
   for (const root of roots) {
@@ -206,24 +245,29 @@ export async function planDelegationContext(envelope, repositoryRootOrOptions = 
     if (!isReadable && isSeed && !matchesAny(root, discoverable)) {
       throw error("context_unauthorized", `Seed is outside discovery authority: ${root}.`);
     }
-    if (matchesAny(root, forbidden)) throw error("context_forbidden_path", `Repository path is forbidden: ${root}.`);
+    if (matchesAny(root, forbidden, { caseInsensitive: true })) throw error("context_forbidden_path", `Repository path is forbidden: ${root}.`);
     const rootReasons = [];
     if (isReadable) rootReasons.push({ kind: "explicit" });
     if (isSeed) rootReasons.push({ kind: "seed" });
     reasons.set(root, new Map(rootReasons.map((reason) => [reasonKey(reason), reason])));
-    queue.push({ relativePath: root, depth: 0 });
+    pushQueue(queue, { relativePath: root, depth: 0 });
+    queued.add(root);
   }
 
   const visited = new Set();
   while (queue.length > 0) {
-    queue.sort((left, right) => left.depth - right.depth || left.relativePath.localeCompare(right.relativePath));
-    const current = queue.shift();
+    const current = popQueue(queue);
+    queued.delete(current.relativePath);
     if (visited.has(current.relativePath)) continue;
     visited.add(current.relativePath);
     if (visited.size > planning.budget.maxFiles) {
       throw budgetError("maxFiles", planning.budget.maxFiles, visited.size);
     }
-    const absolute = await assertSafeRegularFile(current.relativePath, repositoryRoot, lstat);
+    const { absolute, stat } = await assertSafeRegularFile(current.relativePath, repositoryRoot, lstat);
+    const projectedBytes = selectedBytes + stat.size;
+    if (!Number.isSafeInteger(stat.size) || stat.size < 0 || projectedBytes > planning.budget.maxBytes) {
+      throw budgetError("maxBytes", planning.budget.maxBytes, projectedBytes);
+    }
     let raw;
     try {
       raw = await readFile(absolute);
@@ -232,10 +276,10 @@ export async function planDelegationContext(envelope, repositoryRootOrOptions = 
       throw error("context_file_unreadable", `Required local file cannot be read: ${current.relativePath}.`);
     }
     const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
-    selectedBytes += bytes.byteLength;
-    if (selectedBytes > planning.budget.maxBytes) {
-      throw budgetError("maxBytes", planning.budget.maxBytes, selectedBytes);
+    if (bytes.byteLength !== stat.size) {
+      throw error("context_source_changed", `Required local file changed while it was read: ${current.relativePath}.`);
     }
+    selectedBytes = projectedBytes;
     records.set(current.relativePath, { sha256: sha256(bytes), bytes: bytes.byteLength });
 
     const extension = path.posix.extname(current.relativePath);
@@ -248,6 +292,10 @@ export async function planDelegationContext(envelope, repositoryRootOrOptions = 
       throw error("invalid_analyzer_result", `Analyzer identity is not authorized for ${current.relativePath}.`);
     }
     for (const ref of analyzed.references) {
+      referenceCount += 1;
+      if (referenceCount > MAX_ANALYZER_REFERENCES) {
+        throw budgetError("maxReferences", MAX_ANALYZER_REFERENCES, referenceCount);
+      }
       const specifier = ref?.specifier;
       const kind = ref?.kind;
       if (typeof specifier !== "string" || specifier.length === 0) {
@@ -263,7 +311,7 @@ export async function planDelegationContext(envelope, repositoryRootOrOptions = 
       }
       const child = dependencyPath(current.relativePath, specifier);
       if (isPrivatePath(child)) throw error("context_private_path", `Private repository path is not eligible: ${child}.`);
-      if (matchesAny(child, forbidden)) throw error("context_forbidden_path", `Dependency is forbidden: ${child}.`);
+      if (matchesAny(child, forbidden, { caseInsensitive: true })) throw error("context_forbidden_path", `Dependency is forbidden: ${child}.`);
       if (!matchesAny(child, discoverable)) throw error("context_unauthorized", `Dependency is outside discovery authority: ${child}.`);
       if (!visited.has(child) && current.depth + 1 > planning.budget.maxDepth) {
         throw budgetError("maxDepth", planning.budget.maxDepth, current.depth + 1);
@@ -271,7 +319,10 @@ export async function planDelegationContext(envelope, repositoryRootOrOptions = 
       const dependencyReason = { kind: "dependency", parent: current.relativePath, specifier };
       if (!reasons.has(child)) reasons.set(child, new Map());
       reasons.get(child).set(reasonKey(dependencyReason), dependencyReason);
-      if (!visited.has(child)) queue.push({ relativePath: child, depth: current.depth + 1 });
+      if (!visited.has(child) && !queued.has(child)) {
+        pushQueue(queue, { relativePath: child, depth: current.depth + 1 });
+        queued.add(child);
+      }
     }
   }
 

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { checkCodexCompatibility, parseCodexVersion } from "../src/codex/compatibility.mjs";
 import { resolveWorkerProfile, validateWorkerProfiles, workerEnvironment } from "../src/codex/profile.mjs";
+import { validateTaskEnvelope } from "../src/envelope.mjs";
+
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const registry = {
   schemaVersion: "1.0.0",
@@ -77,11 +83,34 @@ test("direct Responses profiles bind provider identity without credential values
   assert.doesNotMatch(JSON.stringify(profile), /credential-value/);
 });
 
+test("OpenCode Go Luna examples form a valid credential-free direct route", async () => {
+  const profilePath = path.join(packageRoot, "examples", "codex-worker-profiles.opencode-go-luna.json");
+  const envelopePath = path.join(packageRoot, "examples", "codex-task-envelope.opencode-go-luna.json");
+  const profileRegistry = JSON.parse(await readFile(profilePath, "utf8"));
+  const envelope = JSON.parse(await readFile(envelopePath, "utf8"));
+
+  const profile = resolveWorkerProfile(profileRegistry, "opencode-go-luna");
+  assert.equal(profile.model, "gpt-5.6-luna");
+  assert.equal(profile.external, true);
+  assert.deepEqual(profile.provider, {
+    name: "opencode-go",
+    baseUrl: "https://opencode.ai/zen/go/v1",
+    wireApi: "responses",
+    credentialEnv: "OPENCODE_GO_API_KEY"
+  });
+
+  assert.doesNotThrow(() => validateTaskEnvelope(envelope));
+  assert.equal(envelope.executionProfile, "opencode-go-luna");
+  assert.doesNotMatch(JSON.stringify(envelope), /OPENCODE_GO_API_KEY|opencode\.ai\/zen/);
+});
+
 for (const [name, profile] of [
   ["unsupported wire API", { model: "worker-model", external: true, provider: { name: "provider", baseUrl: "https://provider.example/v1", wireApi: "chat", credentialEnv: "PROVIDER_API_KEY" } }],
   ["non-loopback HTTP", { model: "worker-model", external: true, provider: { name: "provider", baseUrl: "http://provider.example/v1", wireApi: "responses", credentialEnv: "PROVIDER_API_KEY" } }],
   ["URL credentials", { model: "worker-model", external: true, provider: { name: "provider", baseUrl: "https://user:password@provider.example/v1", wireApi: "responses", credentialEnv: "PROVIDER_API_KEY" } }],
   ["credential value field", { model: "worker-model", external: true, provider: { name: "provider", baseUrl: "https://provider.example/v1", wireApi: "responses", credentialEnv: "PROVIDER_API_KEY", apiKey: "secret" } }],
+  ["over-budget URL encoding", { model: "worker-model", external: true, provider: { name: "provider", baseUrl: "https://provider.example/v1/carrier%25252Fopaque-value", wireApi: "responses", credentialEnv: "PROVIDER_API_KEY" } }],
+  ["malformed URL encoding", { model: "worker-model", external: true, provider: { name: "provider", baseUrl: "https://provider.example/bad%ZZ/carrier%252Fopaque-value", wireApi: "responses", credentialEnv: "PROVIDER_API_KEY" } }],
   ["missing model", { external: true, provider: { name: "provider", baseUrl: "https://provider.example/v1", wireApi: "responses", credentialEnv: "PROVIDER_API_KEY" } }],
   ["non-external route", { model: "worker-model", external: false, provider: { name: "provider", baseUrl: "https://provider.example/v1", wireApi: "responses", credentialEnv: "PROVIDER_API_KEY" } }],
   ["named Codex profile conflict", { codexProfile: "other", model: "worker-model", external: true, provider: { name: "provider", baseUrl: "https://provider.example/v1", wireApi: "responses", credentialEnv: "PROVIDER_API_KEY" } }],

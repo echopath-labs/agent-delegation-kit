@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { asDelegationError } from "../src/errors.mjs";
@@ -45,8 +45,17 @@ function parseArgs(argv) {
   return { command, ...options };
 }
 
+async function readBoundedText(file, maximumBytes, label) {
+  const absolute = resolve(file);
+  const info = await lstat(absolute);
+  if (!info.isFile() || info.isSymbolicLink() || info.size > maximumBytes) {
+    throw new Error(`${label} must be a bounded regular file.`);
+  }
+  return readFile(absolute, "utf8");
+}
+
 async function readJson(file) {
-  return JSON.parse(await readFile(resolve(file), "utf8"));
+  return JSON.parse(await readBoundedText(file, 4 * 1024 * 1024, "JSON input"));
 }
 
 async function runCodex(options) {
@@ -69,8 +78,8 @@ async function correctCodex(options) {
   const started = performance.now();
   const profileRegistry = await readJson(options.profiles);
   const prepared = await loadCodexDelegation(resolve(options.taskRoot), profileRegistry);
-  const state = JSON.parse(await readFile(prepared.statePath, "utf8"));
-  const prompt = await readFile(resolve(options.prompt), "utf8");
+  const state = await readJson(prepared.statePath);
+  const prompt = await readBoundedText(options.prompt, 64 * 1024, "Correction prompt");
   const execution = await correctCodexDelegation(prepared, {
     taskId: state.taskId,
     profileFingerprint: state.profileFingerprint,

@@ -15,6 +15,7 @@
     "validations",
     "unresolvedRisks",
     "metrics",
+    "reviewIdentity",
     "acceptance"
   ],
   "properties": {
@@ -93,18 +94,42 @@
     "hostObserved": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["baseline", "changedPaths", "scopeBreaches", "candidatePatchSha256", "evidenceAvailable"],
+      "required": ["baseline", "changedPaths", "scopeBreaches", "candidatePatchSha256", "evidenceAvailable", "privateControlChanged", "credentialEvidenceSafe"],
       "properties": {
         "baseline": { "type": "string" },
         "changedPaths": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
         "scopeBreaches": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
         "candidatePatchSha256": { "type": ["string", "null"] },
-        "evidenceAvailable": { "type": "boolean" }
+        "evidenceAvailable": { "type": "boolean" },
+        "privateControlChanged": { "type": "boolean" },
+        "credentialEvidenceSafe": { "type": "boolean" }
       }
     },
     "validations": { "type": "array", "items": { "type": "object" } },
     "unresolvedRisks": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
     "metrics": { "type": "object" },
+    "reviewIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "stateRevision",
+        "correctionSequence",
+        "resultIdentity",
+        "privateControlFingerprint",
+        "candidatePatchSha256",
+        "fingerprint"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "stateRevision": { "type": "integer", "minimum": 0 },
+        "correctionSequence": { "type": "integer", "minimum": 0 },
+        "resultIdentity": { "type": ["string", "null"] },
+        "privateControlFingerprint": { "type": "string", "minLength": 1 },
+        "candidatePatchSha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    },
     "acceptance": {
       "type": "object",
       "additionalProperties": false,

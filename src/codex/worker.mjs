@@ -1,36 +1,249 @@
-import { access, chmod, lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { chmod, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { minimalEnvironment } from "../environment.mjs";
 import { DelegationError } from "../errors.mjs";
 import { runProcess } from "../process.mjs";
-import { conciseOutput } from "../redact.mjs";
+import {
+  conciseOutput,
+  SensitiveUrlDecodeBudgetError,
+  SensitiveUrlEncodingError,
+  sensitiveUrlValues
+} from "../redact.mjs";
 import { failedWorkerResult, validateCodexWorkerResult } from "./result.mjs";
+import { bindTaskSensitiveGrant, taskSensitiveGrantMatches } from "./state.mjs";
 import { workerEnvironment } from "./profile.mjs";
-
-const SAFE_BASE_ENVIRONMENT = ["PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "SHELL", "SSL_CERT_FILE", "SSL_CERT_DIR"];
-
-function safeBaseEnvironment(source) {
-  return Object.fromEntries(SAFE_BASE_ENVIRONMENT.flatMap((name) => source[name] === undefined ? [] : [[name, source[name]]]));
-}
-
-async function linkIfPresent(source, destination) {
-  try {
-    await access(destination);
-    return true;
-  } catch {
-    // The task home is new or this optional link has not been created yet.
-  }
-  try {
-    await access(source);
-  } catch {
-    return false;
-  }
-  await symlink(source, destination);
-  return true;
-}
 
 function tomlString(value) {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")}"`;
+}
+
+const AUTH_KEYS = new Set(["OPENAI_API_KEY", "tokens", "last_refresh", "auth_mode"]);
+const CREDENTIAL_ASSIGNMENT = /^\s*(?:api[_-]?key|.*(?:access|auth|bearer)[_-]?token|password|secret|credential)\s*=/imu;
+const CONFIG_TABLE = /^\s*\[+\s*([^\]]+)\s*\]+\s*$/gmu;
+const CONFIG_ASSIGNMENT = /^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*=/u;
+const SAFE_TOP_LEVEL_CONFIG = new Set(["model", "model_provider", "model_reasoning_effort", "disable_response_storage"]);
+const SAFE_PROFILE_CONFIG = new Set(["model", "model_provider", "model_reasoning_effort", "disable_response_storage"]);
+const SAFE_PROVIDER_CONFIG = new Set(["name", "base_url", "env_key", "wire_api", "request_max_retries", "stream_max_retries", "stream_idle_timeout_ms", "websocket_connect_timeout_ms"]);
+const MAX_WORKER_RESULT_BYTES = 4 * 1024 * 1024;
+
+function parseSnapshotString(line, key, profileName) {
+  const match = line.match(new RegExp(`^\\s*${key}\\s*=\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*')\\s*(?:#.*)?$`, "u"));
+  if (!match) {
+    throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot has an unsupported ${key} value: ${profileName}.`);
+  }
+  if (match[1].startsWith("'")) return match[1].slice(1, -1);
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot has a malformed ${key} value: ${profileName}.`);
+  }
+}
+
+function providerNameFromTable(table, profileName) {
+  const raw = table.slice("model_providers.".length);
+  if (/^[A-Za-z0-9_-]+$/u.test(raw)) return raw;
+  if (/^"(?:[^"\\]|\\.)*"$/u.test(raw)) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "string" && parsed.length > 0) return parsed;
+    } catch {
+      // Fall through to the normalized projection error.
+    }
+  }
+  throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot has an unsupported provider table name: ${profileName}.`);
+}
+
+function validateSnapshotBaseUrl(line, profileName) {
+  const value = parseSnapshotString(line, "base_url", profileName);
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot has an invalid base_url: ${profileName}.`);
+  }
+  const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname);
+  if ((parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopback)) || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot base_url must use HTTPS or loopback HTTP without credentials, query parameters, or fragments: ${profileName}.`);
+  }
+}
+
+function stringLeaves(value, output = []) {
+  if (typeof value === "string") output.push(value);
+  else if (Array.isArray(value)) value.forEach((item) => stringLeaves(item, output));
+  else if (value && typeof value === "object") Object.values(value).forEach((item) => stringLeaves(item, output));
+  return output;
+}
+
+function providerUrlSensitiveValues(value) {
+  try {
+    return sensitiveUrlValues(value);
+  } catch (error) {
+    if (error instanceof SensitiveUrlDecodeBudgetError) {
+      throw new DelegationError(
+        "provider_url_decode_budget_exceeded",
+        "Selected provider URL exceeds the supported path decoding bound."
+      );
+    }
+    if (error instanceof SensitiveUrlEncodingError) {
+      throw new DelegationError(
+        "provider_url_encoding_unsupported",
+        "Selected provider URL contains unsupported path encoding."
+      );
+    }
+    throw error;
+  }
+}
+
+export async function taskSensitiveValues(capsule, profile, environmentSource = process.env, providedGrants = undefined) {
+  const codexHome = path.join(capsule.taskRoot, "codex-home");
+  const environmentGrants = providedGrants ?? workerEnvironment(profile, environmentSource);
+  const values = Object.values(environmentGrants ?? {});
+  try {
+    const auth = JSON.parse(await readFile(path.join(codexHome, "auth.json"), "utf8"));
+    stringLeaves(auth, values);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (profile.provider?.baseUrl) values.push(...providerUrlSensitiveValues(profile.provider.baseUrl));
+  try {
+    const config = await readFile(path.join(codexHome, "config.toml"), "utf8");
+    for (const line of config.split(/\r?\n/u)) {
+      if (!/^\s*base_url\s*=/u.test(line)) continue;
+      values.push(...providerUrlSensitiveValues(parseSnapshotString(line, "base_url", "task configuration")));
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  return [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))];
+}
+
+function minimalNativeConfig(profile, capsuleRoot) {
+  const lines = ['sandbox_mode = "workspace-write"'];
+  if (profile.model && !profile.codexProfile) lines.push(`model = ${tomlString(profile.model)}`);
+  if (profile.codexProfile) {
+    lines.push("", `[profiles.${tomlString(profile.codexProfile)}]`);
+    if (profile.model) lines.push(`model = ${tomlString(profile.model)}`);
+  }
+  lines.push("", `[projects.${tomlString(path.resolve(capsuleRoot))}]`, 'trust_level = "trusted"', "");
+  return lines.join("\n");
+}
+
+async function readSafeConfigSnapshot(source, profileName) {
+  let info;
+  try {
+    info = await lstat(source);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+  if (!info.isFile() || info.isSymbolicLink() || info.size > 256 * 1024) {
+    throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot is not a safe regular file: ${profileName}.`);
+  }
+  const content = await readFile(source, "utf8");
+  if (CREDENTIAL_ASSIGNMENT.test(content)) {
+    throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot contains a credential-like assignment: ${profileName}.`);
+  }
+  let currentTable = null;
+  const referencedProviders = new Set();
+  const providerTables = new Set();
+  const expectedProfileTables = new Set([`profiles.${profileName}`, `profiles.${JSON.stringify(profileName)}`]);
+  for (const line of content.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("#")) continue;
+    const table = trimmed.match(/^\[+\s*([^\]]+)\s*\]+$/u);
+    if (table) {
+      currentTable = table[1].trim();
+      if (!expectedProfileTables.has(currentTable) && !currentTable.startsWith("model_providers.")) {
+        throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot contains an unrelated configuration table: ${profileName}.`);
+      }
+      if (currentTable.startsWith("model_providers.")) providerTables.add(providerNameFromTable(currentTable, profileName));
+      continue;
+    }
+    const assignment = line.match(CONFIG_ASSIGNMENT);
+    if (!assignment) {
+      throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot contains unsupported syntax: ${profileName}.`);
+    }
+    const allowed = currentTable === null
+      ? SAFE_TOP_LEVEL_CONFIG
+      : currentTable.startsWith("profiles.")
+        ? SAFE_PROFILE_CONFIG
+        : SAFE_PROVIDER_CONFIG;
+    if (!allowed.has(assignment[1])) {
+      throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot contains an unrelated setting: ${profileName}.`);
+    }
+    if (currentTable?.startsWith("model_providers.") && assignment[1] === "base_url") {
+      validateSnapshotBaseUrl(line, profileName);
+    }
+    if ((currentTable === null || currentTable.startsWith("profiles.")) && assignment[1] === "model_provider") {
+      referencedProviders.add(parseSnapshotString(line, "model_provider", profileName));
+    }
+  }
+  for (const match of content.matchAll(CONFIG_TABLE)) {
+    const table = match[1].trim();
+    if (!table.startsWith("profiles.") && !table.startsWith("model_providers.")) {
+      throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot contains an unrelated configuration table: ${profileName}.`);
+    }
+  }
+  const unrelatedProviders = [...providerTables].filter((provider) => !referencedProviders.has(provider));
+  if (unrelatedProviders.length > 0) {
+    throw new DelegationError("codex_profile_projection_unsupported", `The selected Codex profile snapshot contains an unreferenced provider table: ${profileName}.`);
+  }
+  return content.endsWith("\n") ? content : `${content}\n`;
+}
+
+async function projectNativeAuth(sourceHome, codexHome) {
+  const source = path.join(sourceHome, "auth.json");
+  const destination = path.join(codexHome, "auth.json");
+  let existing = null;
+  try {
+    existing = await lstat(destination);
+    if (!existing.isFile() || existing.isSymbolicLink() || (existing.mode & 0o777) !== 0o600) {
+      throw new DelegationError("codex_auth_projection_unsupported", "Task-scoped Codex authentication has an unsafe file type or permissions.");
+    }
+  } catch (error) {
+    if (error instanceof DelegationError) throw error;
+    if (error?.code !== "ENOENT") throw error;
+  }
+  let info;
+  try {
+    info = await lstat(source);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      if (existing) {
+        throw new DelegationError("codex_auth_projection_unsupported", "Host Codex authentication disappeared before task execution could be refreshed.");
+      }
+      return false;
+    }
+    throw error;
+  }
+  if (!info.isFile() || info.isSymbolicLink() || info.size > 1024 * 1024) {
+    throw new DelegationError("codex_auth_projection_unsupported", "Codex authentication cannot be projected from an unsafe file.");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(await readFile(source, "utf8"));
+  } catch {
+    throw new DelegationError("codex_auth_projection_unsupported", "Codex authentication cannot be projected from malformed JSON.");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new DelegationError("codex_auth_projection_unsupported", "Codex authentication has an unsupported shape.");
+  }
+  const projected = Object.fromEntries(Object.entries(parsed).filter(([key]) => AUTH_KEYS.has(key)));
+  if (Object.keys(projected).length === 0) {
+    throw new DelegationError("codex_auth_projection_unsupported", "Codex authentication has no supported projected fields.");
+  }
+  const temporary = `${destination}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(projected, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+    await rename(temporary, destination);
+    await chmod(destination, 0o600);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => {});
+    throw error;
+  }
+  return true;
 }
 
 export function directProviderConfig(profile, capsuleRoot = undefined) {
@@ -99,14 +312,18 @@ export async function prepareTaskCodexHome(capsule, profile, options = {}) {
     return codexHome;
   }
   const sourceHome = path.resolve(options.sourceCodexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"));
-  await linkIfPresent(path.join(sourceHome, "auth.json"), path.join(codexHome, "auth.json"));
-  await linkIfPresent(path.join(sourceHome, "config.toml"), path.join(codexHome, "config.toml"));
-  if (profile.codexProfile) {
-    await linkIfPresent(
-      path.join(sourceHome, `${profile.codexProfile}.config.toml`),
-      path.join(codexHome, `${profile.codexProfile}.config.toml`)
-    );
+  const snapshot = profile.codexProfile
+    ? await readSafeConfigSnapshot(path.join(sourceHome, `${profile.codexProfile}.config.toml`), profile.codexProfile)
+    : null;
+  if (profile.router && snapshot === null) {
+    throw new DelegationError("codex_profile_projection_unsupported", "Router-backed Codex execution requires a credential-free selected profile snapshot.");
   }
+  let config = snapshot ?? minimalNativeConfig(profile, capsule.capsuleRoot);
+  if (snapshot) {
+    config = `${snapshot}\n[projects.${tomlString(path.resolve(capsule.capsuleRoot))}]\ntrust_level = "trusted"\n`;
+  }
+  await materializeDirectConfig(path.join(codexHome, "config.toml"), config, false);
+  await projectNativeAuth(sourceHome, codexHome);
   return codexHome;
 }
 
@@ -167,7 +384,8 @@ export function buildCodexExecInvocation({ envelope, profile, capsule, resultPat
   return { command: profile.codexCommand, args, input: promptFor(envelope, correction) };
 }
 
-export function parseCodexEventStream(stdout) {
+export function parseCodexEventStream(stdout, options = {}) {
+  const sensitiveValues = Array.isArray(options.sensitiveValues) ? options.sensitiveValues : [];
   let threadId = null;
   let terminalState = null;
   let usage = null;
@@ -190,15 +408,17 @@ export function parseCodexEventStream(stdout) {
     if (event.type === "turn.failed") {
       terminalState = "failed";
       failure = {
-        code: typeof event.error?.code === "string" ? event.error.code : "codex_turn_failed",
-        message: conciseOutput(event.error?.message ?? "The delegated Codex turn failed.", 1000)
+        code: typeof event.error?.code === "string"
+          ? conciseOutput(event.error.code, 200, sensitiveValues)
+          : "codex_turn_failed",
+        message: conciseOutput(event.error?.message ?? "The delegated Codex turn failed.", 1000, sensitiveValues)
       };
     }
   }
   return { threadId, terminalState, usage, eventCount, failure };
 }
 
-export async function runCodexWorker({ envelope, profile, capsule, correction = null }, options = {}) {
+export async function runCodexWorker({ envelope, profile, capsule, statePath = null, correction = null }, options = {}) {
   const runner = options.runProcess ?? runProcess;
   let codexHome;
   try {
@@ -214,13 +434,28 @@ export async function runCodexWorker({ envelope, profile, capsule, correction = 
   const resultPath = path.join(capsule.controlRoot, `worker-result-${sequence}.json`);
   const invocation = buildCodexExecInvocation({ envelope, profile, capsule, resultPath, correction });
   const environmentSource = options.environment ?? process.env;
+  let sensitiveValues;
+  let environmentGrants;
   let env;
   try {
-    env = {
-      ...safeBaseEnvironment(environmentSource),
-      ...workerEnvironment(profile, environmentSource),
-      CODEX_HOME: codexHome
-    };
+    const home = path.join(capsule.taskRoot, "worker-home");
+    const temporary = path.join(capsule.taskRoot, "worker-tmp");
+    await mkdir(home, { recursive: true, mode: 0o700 });
+    await mkdir(temporary, { recursive: true, mode: 0o700 });
+    environmentGrants = workerEnvironment(profile, environmentSource);
+    env = minimalEnvironment(environmentSource, {
+      grants: environmentGrants,
+      home,
+      temporary
+    });
+    env.CODEX_HOME = codexHome;
+    sensitiveValues = await taskSensitiveValues(capsule, profile, environmentSource, environmentGrants);
+    if (statePath) {
+      const grant = await bindTaskSensitiveGrant(statePath, "worker", sensitiveValues);
+      if (!grant.consistent) {
+        throw new DelegationError("sensitive_grant_changed", "The worker sensitive-value set changed during the task lifecycle; start a new task.");
+      }
+    }
   } catch (error) {
     const code = error instanceof DelegationError ? error.code : "worker_environment_unavailable";
     const message = error instanceof DelegationError ? error.message : "The delegated worker environment could not be prepared.";
@@ -232,15 +467,56 @@ export async function runCodexWorker({ envelope, profile, capsule, correction = 
       cwd: capsule.capsuleRoot,
       env,
       timeoutMs: envelope.execution?.timeoutMs ?? 30 * 60_000,
+      maxCaptureBytes: 8 * 1024 * 1024,
       input: invocation.input
     });
   } catch {
     return { threadId: correction?.threadId ?? null, terminalState: "failed", usage: null, eventCount: 0, workerResult: failedWorkerResult(envelope.taskId, "codex_start_failed", "The configured Codex executable could not be started.") };
   }
 
+  if (statePath) {
+    let grantMatches = false;
+    try {
+      const currentSensitiveValues = await taskSensitiveValues(capsule, profile, environmentSource, environmentGrants);
+      grantMatches = await taskSensitiveGrantMatches(statePath, "worker", currentSensitiveValues);
+    } catch {
+      grantMatches = false;
+    }
+    if (!grantMatches) {
+      let cleanupVerified = true;
+      if (!options.readResultFile) {
+        await rm(resultPath, { force: true }).catch(() => { cleanupVerified = false; });
+        if (await lstat(resultPath).catch(() => null)) cleanupVerified = false;
+      }
+      return {
+        threadId: correction?.threadId ?? null,
+        terminalState: "failed",
+        usage: null,
+        eventCount: 0,
+        workerResult: failedWorkerResult(
+          envelope.taskId,
+          cleanupVerified ? "sensitive_grant_changed" : "sensitive_evidence_cleanup_failed",
+          cleanupVerified
+            ? "The worker sensitive-value set changed during execution; start a new task."
+            : "Untrusted worker evidence could not be removed safely."
+        )
+      };
+    }
+  }
+
+  if (processResult.stdoutTruncated || processResult.stderrTruncated) {
+    return {
+      threadId: correction?.threadId ?? null,
+      terminalState: "failed",
+      usage: null,
+      eventCount: 0,
+      workerResult: failedWorkerResult(envelope.taskId, "codex_output_truncated", "Codex output exceeded the evidence capture bound.")
+    };
+  }
+
   let events;
   try {
-    events = parseCodexEventStream(processResult.stdout);
+    events = parseCodexEventStream(processResult.stdout, { sensitiveValues });
   } catch (error) {
     return { threadId: correction?.threadId ?? null, terminalState: "failed", usage: null, eventCount: 0, workerResult: failedWorkerResult(envelope.taskId, error.code, error.message) };
   }
@@ -264,9 +540,20 @@ export async function runCodexWorker({ envelope, profile, capsule, correction = 
   }
   let parsed;
   try {
+    if (!options.readResultFile) {
+      const resultInfo = await lstat(resultPath);
+      if (!resultInfo.isFile() || resultInfo.isSymbolicLink() || resultInfo.size > MAX_WORKER_RESULT_BYTES) {
+        throw new DelegationError("malformed_worker_result", "Codex structured output is not a bounded regular file.");
+      }
+    }
     parsed = JSON.parse(await (options.readResultFile ?? readFile)(resultPath, "utf8"));
-    parsed = validateCodexWorkerResult(parsed, envelope.taskId);
+    parsed = validateCodexWorkerResult(parsed, envelope.taskId, { sensitiveValues });
+    if (!options.readResultFile) {
+      await writeFile(resultPath, `${JSON.stringify(parsed, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+      await chmod(resultPath, 0o600);
+    }
   } catch (error) {
+    if (!options.readResultFile) await rm(resultPath, { force: true }).catch(() => {});
     const code = error instanceof DelegationError ? error.code : "malformed_worker_result";
     const message = error instanceof DelegationError ? error.message : "Codex produced malformed structured output.";
     return { ...events, threadId, workerResult: failedWorkerResult(envelope.taskId, code, message) };

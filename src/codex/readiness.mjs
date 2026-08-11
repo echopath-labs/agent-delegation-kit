@@ -2,18 +2,14 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { DelegationError } from "../errors.mjs";
-import { getHead, getStatusPaths } from "../git.mjs";
+import { minimalEnvironment } from "../environment.mjs";
+import { getHead } from "../git.mjs";
 import { runProcess } from "../process.mjs";
 import { conciseOutput } from "../redact.mjs";
-
-const SAFE_ENVIRONMENT = ["PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR"];
+import { getCapsuleFilesystemChanges, getPrivateControlChanges } from "./capsule.mjs";
 
 function readinessEnvironment(source, home, temporary) {
-  return {
-    ...Object.fromEntries(SAFE_ENVIRONMENT.flatMap((name) => source[name] === undefined ? [] : [[name, source[name]]])),
-    HOME: home,
-    TMPDIR: temporary
-  };
+  return minimalEnvironment(source, { home, temporary });
 }
 
 function evidence(outcome, commands, mutationDetected = false) {
@@ -28,11 +24,12 @@ function evidence(outcome, commands, mutationDetected = false) {
 }
 
 async function capsuleMutation(capsule) {
-  const [head, changedPaths] = await Promise.all([
-    getHead(capsule.capsuleRoot),
-    getStatusPaths(capsule.capsuleRoot)
+  const [head, changedPaths, privateControlPaths] = await Promise.all([
+    getHead(capsule.capsuleRoot, capsule.gitControl),
+    getCapsuleFilesystemChanges(capsule),
+    getPrivateControlChanges(capsule)
   ]);
-  return head !== capsule.baseline || changedPaths.length > 0;
+  return head !== capsule.baseline || changedPaths.length > 0 || privateControlPaths.length > 0;
 }
 
 export async function runCapsuleReadiness({ envelope, capsule }, options = {}) {
@@ -69,7 +66,8 @@ export async function runCapsuleReadiness({ envelope, capsule }, options = {}) {
       break;
     }
     mutationDetected = await capsuleMutation(capsule);
-    const passed = !processResult.timedOut && !processResult.signal &&
+    const truncated = processResult.stdoutTruncated || processResult.stderrTruncated;
+    const passed = !processResult.timedOut && !processResult.signal && !truncated &&
       command.acceptableExitCodes.includes(processResult.exitCode) && !mutationDetected;
     commands.push({
       id: command.id,
@@ -79,6 +77,8 @@ export async function runCapsuleReadiness({ envelope, capsule }, options = {}) {
       summary: conciseOutput(`${processResult.stdout ?? ""}\n${processResult.stderr ?? ""}`, 2000),
       reason: mutationDetected
         ? "capsule_mutation"
+        : truncated
+          ? "output_truncated"
         : processResult.timedOut
           ? "timeout"
           : processResult.signal

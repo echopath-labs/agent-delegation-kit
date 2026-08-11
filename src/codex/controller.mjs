@@ -1,10 +1,11 @@
-import { readFile, realpath } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateTaskEnvelope } from "../envelope.mjs";
 import { collectGitState, enforceDirtyTreePolicy, resolveRepository } from "../git.mjs";
 import { DelegationError } from "../errors.mjs";
-import { cleanupCapsule, prepareCapsule, verifyContextManifestIdentity, verifySourceUnchanged } from "./capsule.mjs";
+import { assertFilesystemSnapshot } from "../filesystem-evidence.mjs";
+import { cleanupCapsule, getPrivateControlChanges, prepareCapsule, verifyContextManifestIdentity, verifySourceUnchanged } from "./capsule.mjs";
 import { checkCodexCompatibility } from "./compatibility.mjs";
 import { requireProviderCredential, resolveWorkerProfile } from "./profile.mjs";
 import { checkRouterHealth } from "./router.mjs";
@@ -147,8 +148,25 @@ export async function loadCodexDelegation(taskRootInput, profileRegistry) {
     throw new DelegationError("task_state_unavailable", "Task capsule marker is missing or malformed.");
   }
   const statePath = path.join(taskRoot, "state.json");
+  const taskRootInfo = await lstat(taskRoot);
+  if (
+    !taskRootInfo.isDirectory() || taskRootInfo.isSymbolicLink() ||
+    marker.taskRootIdentity?.dev !== taskRootInfo.dev || marker.taskRootIdentity?.ino !== taskRootInfo.ino
+  ) {
+    throw new DelegationError("task_state_mismatch", "Task root identity no longer matches its marker.");
+  }
   const state = await readTaskState(statePath);
   const envelope = validateTaskEnvelope(JSON.parse(await readFile(path.join(taskRoot, "control", "task-envelope.json"), "utf8")));
+  const privateControlBaselinePath = path.join(taskRoot, "control", "private-control-baseline.json");
+  const privateControlBaseline = assertFilesystemSnapshot(JSON.parse(await readFile(privateControlBaselinePath, "utf8")));
+  const sourceGitControlBaselinePath = path.join(taskRoot, "control", "source-git-control-baseline.json");
+  const sourceGitControlBaseline = assertFilesystemSnapshot(JSON.parse(await readFile(sourceGitControlBaselinePath, "utf8")));
+  if (privateControlBaseline.fingerprint !== state.privateControlFingerprint) {
+    throw new DelegationError("task_state_mismatch", "Stored private control evidence no longer matches lifecycle state.");
+  }
+  if ((await getPrivateControlChanges({ taskRoot, privateControlBaselinePath, privateControlBaseline })).length > 0) {
+    throw new DelegationError("task_state_mismatch", "Stored immutable private controls changed after task preparation.");
+  }
   if (marker.taskId !== state.taskId || state.taskId !== envelope.taskId) {
     throw new DelegationError("task_state_mismatch", "Task marker, lifecycle state, and envelope identities do not match.");
   }
@@ -166,6 +184,15 @@ export async function loadCodexDelegation(taskRootInput, profileRegistry) {
     throw new DelegationError("task_state_mismatch", "The stored capsule is outside its task directory.");
   }
   const controlRoot = path.join(taskRoot, "control");
+  const gitDir = await realpath(marker.gitDir);
+  const expectedGitParent = marker.mode === "trusted-worktree" ? repository.gitRoot : controlRoot;
+  const relativeGitDir = path.relative(expectedGitParent, gitDir);
+  if (relativeGitDir.startsWith("..") || path.isAbsolute(relativeGitDir) || gitDir === capsuleRoot) {
+    throw new DelegationError("task_state_mismatch", "The stored Git control directory is outside private task control.");
+  }
+  if (typeof marker.gitLinkSha256 !== "string" || !/^[a-f0-9]{64}$/.test(marker.gitLinkSha256)) {
+    throw new DelegationError("task_state_mismatch", "The stored Git control identity is missing or malformed.");
+  }
   const contextManifestFingerprint = marker.contextManifestFingerprint ?? null;
   if ((state.contextManifestFingerprint ?? null) !== contextManifestFingerprint) {
     throw new DelegationError("task_state_mismatch", "Task marker and lifecycle context identities do not match.");
@@ -173,6 +200,7 @@ export async function loadCodexDelegation(taskRootInput, profileRegistry) {
   const capsule = {
     taskId: state.taskId,
     taskRoot,
+    taskRootIdentity: marker.taskRootIdentity,
     markerPath: path.join(taskRoot, "capsule.json"),
     capsuleRoot,
     controlRoot,
@@ -185,11 +213,28 @@ export async function loadCodexDelegation(taskRootInput, profileRegistry) {
     contextManifestFingerprint,
     mode: marker.mode,
     baseline: state.capsuleBaseline,
+    gitControl: { gitDir, workTree: capsuleRoot },
+    gitLinkSha256: marker.gitLinkSha256,
+    capsuleFilesystemBaselinePath: path.join(controlRoot, "capsule-filesystem-baseline.json"),
+    sourceFilesystemBaselinePath: path.join(controlRoot, "source-filesystem-baseline.json"),
+    sourceGitControlBaselinePath,
+    privateControlBaselinePath,
     sourceHead: marker.sourceHead,
     sourceStatus: marker.sourceStatus,
     sourceStateFingerprint: marker.sourceStateFingerprint,
     inputMetadata: Array.isArray(marker.inputMetadata) ? marker.inputMetadata : []
   };
+  capsule.capsuleFilesystemBaseline = assertFilesystemSnapshot(JSON.parse(await readFile(capsule.capsuleFilesystemBaselinePath, "utf8")));
+  capsule.sourceFilesystemBaseline = assertFilesystemSnapshot(JSON.parse(await readFile(capsule.sourceFilesystemBaselinePath, "utf8")));
+  capsule.sourceGitControlBaseline = sourceGitControlBaseline;
+  capsule.privateControlBaseline = privateControlBaseline;
+  if (
+    capsule.capsuleFilesystemBaseline.fingerprint !== marker.capsuleFilesystemFingerprint ||
+    capsule.sourceFilesystemBaseline.fingerprint !== marker.sourceFilesystemFingerprint ||
+    capsule.sourceGitControlBaseline.fingerprint !== marker.sourceGitControlFingerprint
+  ) {
+    throw new DelegationError("task_state_mismatch", "Stored filesystem evidence no longer matches the task marker.");
+  }
   await verifyContextManifestIdentity(capsule, contextManifestFingerprint);
   const contextManifest = contextManifestFingerprint
     ? JSON.parse(await readFile(capsule.contextManifestPath, "utf8"))

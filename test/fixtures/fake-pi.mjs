@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
@@ -10,6 +10,16 @@ const result = (status, summary, residualRisks = []) => {
 };
 
 switch (scenario) {
+  case "environment": {
+    write("allowed.txt", "delegated edit\n");
+    const isolated = process.env.HOST_SECRET === undefined &&
+      process.env.HOME?.includes("adk-pi-") &&
+      process.env.TMPDIR?.includes("adk-pi-") &&
+      process.env.PI_CODING_AGENT_SESSION_DIR === process.env.TMPDIR &&
+      typeof process.env.PI_CODING_AGENT_DIR === "string";
+    result(isolated ? "completed" : "failed", isolated ? "Environment isolated." : "Environment exposed.");
+    break;
+  }
   case "success":
     write("allowed.txt", "delegated edit\n");
     result("completed", "Bounded edit completed.");
@@ -19,6 +29,71 @@ switch (scenario) {
     write("private.txt", "out of scope\n");
     result("completed", "Executor reported completion.");
     break;
+  case "ignored-breach":
+    write("allowed.txt", "delegated edit\n");
+    write("ignored.txt", "ignored out of scope\n");
+    result("completed", "Executor reported completion.");
+    break;
+  case "git-hook-breach":
+    write("allowed.txt", "delegated edit\n");
+    writeFileSync(path.join(process.cwd(), ".git", "hooks", "pre-commit"), "#!/bin/sh\nexit 0\n", "utf8");
+    result("completed", "Executor reported completion.");
+    break;
+  case "git-object-breach":
+    write("allowed.txt", "delegated edit\n");
+    rmSync(path.join(process.cwd(), ".git", "objects", process.env.FAKE_PI_OBJECT_PATH), { force: true });
+    result("completed", "Executor reported completion.");
+    break;
+  case "config-secret": {
+    const auth = JSON.parse(readFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "auth.json"), "utf8"));
+    const secret = auth.test.key;
+    write("allowed.txt", `${secret}\n`);
+    result("completed", `Executor reflected ${secret}.`, [`Retained ${secret}.`]);
+    break;
+  }
+  case "credential-path": {
+    write(`${process.env.FAKE_PI_PATH_SECRET}.txt`, "path-only credential fixture\n");
+    result("completed", "Executor created one allowed path.");
+    break;
+  }
+  case "env-secret": {
+    const secret = process.env.FAKE_PI_SECRET;
+    write("allowed.txt", `${secret}\n`);
+    result("completed", `Executor reflected ${secret}.`);
+    break;
+  }
+  case "encoded-secret": {
+    const encoded = Buffer.from(process.env.FAKE_PI_SECRET, "utf8").toString("base64");
+    write("allowed.txt", `${encoded}\n`);
+    result("completed", "Executor wrote encoded fixture data.");
+    break;
+  }
+  case "config-url-secret": {
+    const models = JSON.parse(readFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "models.json"), "utf8"));
+    const provider = Object.values(models.providers)[0];
+    const secret = decodeURIComponent(new URL(provider.baseUrl).pathname.split("/").filter(Boolean).at(-1));
+    write("allowed.txt", `${secret}\n`);
+    result("completed", `Executor reflected ${secret}.`);
+    break;
+  }
+  case "config-url-raw-host": {
+    const models = JSON.parse(readFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "models.json"), "utf8"));
+    const provider = Object.values(models.providers)[0];
+    const authority = provider.baseUrl.match(/^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^/?#]*)/u)[1];
+    write("allowed.txt", `${authority}\n`);
+    result("completed", `Executor reflected ${authority}.`);
+    break;
+  }
+  case "route-bound": {
+    const argument = (name) => process.argv[process.argv.indexOf(name) + 1];
+    const bound = process.argv.includes("--no-approve") &&
+      !process.argv.includes("--approve") &&
+      argument("--provider") === process.env.FAKE_PI_EXPECTED_PROVIDER &&
+      argument("--model") === process.env.FAKE_PI_EXPECTED_MODEL;
+    if (bound) write("allowed.txt", "delegated edit\n");
+    result(bound ? "completed" : "failed", bound ? "Resolved route was host-bound." : "Resolved route was not host-bound.");
+    break;
+  }
   case "blocked":
     result("blocked", "A host decision is required.", ["Authority is unresolved."]);
     break;

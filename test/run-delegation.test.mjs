@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -106,6 +106,8 @@ test("executor process failure redacts credential-like output", async () => {
   assert.equal(result.status, "failed");
   assert.equal(result.executor.reportedStatus, "failed");
   assert(!JSON.stringify(result).includes(["top", "secret"].join("-")));
+  assert.equal(Object.hasOwn(result.executor, "stdout"), false);
+  assert.equal(Object.hasOwn(result.executor, "stderr"), false);
 });
 
 test("malformed executor output is normalized as failed", async () => {
@@ -164,6 +166,324 @@ test("out-of-scope edit is independently rejected", async () => {
   assert.equal(result.hostAcceptance.eligible, false);
 });
 
+test("ignored out-of-scope edit is independently rejected", async () => {
+  const root = await createGitRepository();
+  await writeFile(path.join(root, ".gitignore"), "ignored.txt\n");
+  await execFileAsync("git", ["add", ".gitignore"], { cwd: root });
+  await execFileAsync("git", ["commit", "-m", "test: add ignore rule"], { cwd: root });
+  const result = await execute(makeEnvelope(root), "ignored-breach");
+  assert.equal(result.status, "rejected");
+  assert.ok(result.changedPaths.includes("ignored.txt"));
+  assert.ok(result.scope.breaches.includes("ignored.txt"));
+  assert.equal(result.hostAcceptance.eligible, false);
+});
+
+test("behavior-bearing Git metadata mutation is independently rejected", async () => {
+  const root = await createGitRepository();
+  const result = await execute(makeEnvelope(root), "git-hook-breach");
+  assert.equal(result.status, "rejected");
+  assert.ok(result.scope.breaches.includes("git:metadata changed during delegated execution"));
+  assert.equal(result.hostAcceptance.eligible, false);
+});
+
+test("pre-existing Git object mutation is independently rejected", async () => {
+  const root = await createGitRepository();
+  const source = path.join(root, "orphan-source.txt");
+  await writeFile(source, "orphan object evidence\n");
+  const { stdout } = await execFileAsync("git", ["hash-object", "-w", source], { cwd: root });
+  await rm(source);
+  const objectId = stdout.trim();
+  const result = await runDelegation(makeEnvelope(root), {
+    executorCommand: fakePi,
+    executorEnv: {
+      FAKE_PI_SCENARIO: "git-object-breach",
+      FAKE_PI_OBJECT_PATH: `${objectId.slice(0, 2)}/${objectId.slice(2)}`
+    }
+  });
+  assert.equal(result.scope.compliant, false);
+  assert.ok(result.scope.breaches.includes("git:metadata changed during delegated execution"));
+});
+
+test("Pi configuration credentials are redacted and make contaminated source ineligible", async () => {
+  const root = await createGitRepository();
+  const piConfig = await createDirectory();
+  const secret = "opaque-pi-config-secret-value";
+  await writeFile(path.join(piConfig, "auth.json"), `${JSON.stringify({ test: { type: "api_key", key: secret } })}\n`);
+  await writeFile(path.join(piConfig, "settings.json"), `${JSON.stringify({ defaultProvider: "test", defaultModel: "fixture-model" })}\n`);
+  const result = await runDelegation(makeEnvelope(root, {
+    executionProfile: { provider: "test", model: "fixture-model" }
+  }), {
+    executorCommand: fakePi,
+    executorEnv: { FAKE_PI_SCENARIO: "config-secret", PI_CODING_AGENT_DIR: piConfig }
+  });
+  assert.equal(result.status, "rejected");
+  assert.ok(result.scope.breaches.includes("evidence:credential value detected"));
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
+});
+
+test("Pi credential-bearing paths are omitted from retained evidence and rejected", async () => {
+  const root = await createGitRepository();
+  const secret = "opaque-path-secret-value";
+  const result = await runDelegation(makeEnvelope(root, {
+    scope: { allowedPaths: ["*.txt"], forbiddenPaths: [] }
+  }), {
+    executorCommand: fakePi,
+    executorEnv: { FAKE_PI_SCENARIO: "credential-path", FAKE_PI_PATH_SECRET: secret }
+  });
+  assert.equal(result.status, "rejected");
+  assert.deepEqual(result.changedPaths, []);
+  assert.ok(result.scope.breaches.includes("evidence:credential value detected"));
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
+});
+
+test("Pi provider URLs reject userinfo, query parameters, and fragments", async () => {
+  for (const baseUrl of [
+    "https://user:opaque-url-secret@provider.example/v1",
+    "https://provider.example/v1?token=opaque-url-secret",
+    "https://provider.example/v1#opaque-url-secret"
+  ]) {
+    const root = await createGitRepository();
+    const piConfig = await createDirectory();
+    await writeFile(path.join(piConfig, "settings.json"), `${JSON.stringify({ defaultProvider: "test", defaultModel: "fixture-model" })}\n`);
+    await writeFile(path.join(piConfig, "models.json"), `${JSON.stringify({
+      providers: { test: { baseUrl, api: "openai-responses", apiKey: "placeholder", models: [] } }
+    })}\n`);
+    const result = await runDelegation(makeEnvelope(root, {
+      executionProfile: { provider: "test", model: "fixture-model" }
+    }), {
+      executorCommand: fakePi,
+      executorEnv: { FAKE_PI_SCENARIO: "success", PI_CODING_AGENT_DIR: piConfig }
+    });
+    assert.notEqual(result.status, "completed");
+    assert.equal(result.hostAcceptance.eligible, false);
+    assert.doesNotMatch(JSON.stringify(result), /opaque-url-secret/);
+  }
+});
+
+test("Pi executor grants are snapshotted exactly once", async () => {
+  const root = await createGitRepository();
+  const firstSecret = "first-pi-environment-secret";
+  const secondSecret = "second-pi-environment-secret";
+  let reads = 0;
+  const executorEnv = { FAKE_PI_SCENARIO: "env-secret" };
+  Object.defineProperty(executorEnv, "FAKE_PI_SECRET", {
+    enumerable: true,
+    get() {
+      reads += 1;
+      return reads === 1 ? firstSecret : secondSecret;
+    }
+  });
+  const result = await runDelegation(makeEnvelope(root), { executorCommand: fakePi, executorEnv });
+  assert.equal(reads, 1);
+  assert.equal(result.status, "rejected");
+  assert.ok(result.scope.breaches.includes("evidence:credential value detected"));
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(firstSecret));
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(secondSecret));
+});
+
+test("Pi validation output redacts the complete executor and validation grant union", async () => {
+  const root = await createGitRepository();
+  const secret = "pi-worker-secret-decoded-by-validation";
+  const envelope = makeEnvelope(root, {
+    validation: [{
+      id: "decode-fixture",
+      argv: [
+        process.execPath,
+        "-e",
+        "const fs=require('node:fs');console.log(Buffer.from(fs.readFileSync('allowed.txt','utf8').trim(),'base64').toString('utf8'))"
+      ],
+      timeoutMs: 10_000
+    }]
+  });
+  const result = await runDelegation(envelope, {
+    executorCommand: fakePi,
+    executorEnv: { FAKE_PI_SCENARIO: "encoded-secret", FAKE_PI_SECRET: secret }
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.validations[0].status, "passed");
+  assert.match(result.validations[0].output, /REDACTED_EXACT_VALUE/);
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
+});
+
+test("Pi provider URL path components join the exact sensitive-value inventory", async () => {
+  const root = await createGitRepository();
+  const piConfig = await createDirectory();
+  const secret = "opaque-provider-path-secret";
+  await writeFile(path.join(piConfig, "settings.json"), `${JSON.stringify({ defaultProvider: "test", defaultModel: "fixture-model" })}\n`);
+  await writeFile(path.join(piConfig, "models.json"), `${JSON.stringify({
+    providers: {
+      test: {
+        baseUrl: `https://provider.example/v1/${secret}`,
+        api: "openai-responses",
+        apiKey: "placeholder",
+        models: []
+      }
+    }
+  })}\n`);
+  const result = await runDelegation(makeEnvelope(root, {
+    executionProfile: { provider: "test", model: "fixture-model" }
+  }), {
+    executorCommand: fakePi,
+    executorEnv: { FAKE_PI_SCENARIO: "config-url-secret", PI_CODING_AGENT_DIR: piConfig }
+  });
+  assert.equal(result.status, "rejected");
+  assert.ok(result.scope.breaches.includes("evidence:credential value detected"));
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
+});
+
+test("Pi auth projection rejects command and provider-specific credential semantics before launch", async () => {
+  for (const credential of [
+    { type: "api_key", key: "!printf command-resolved-secret" },
+    { type: "api_key", key: "literal-key", env: { PROVIDER_BASE_URL: "https://derived.example/v1" } },
+    { type: "oauth", access: "oauth-access-secret", refresh: "oauth-refresh-secret" }
+  ]) {
+    const root = await createGitRepository();
+    const piConfig = await createDirectory();
+    await writeFile(path.join(piConfig, "settings.json"), `${JSON.stringify({ defaultProvider: "test", defaultModel: "fixture-model" })}\n`);
+    await writeFile(path.join(piConfig, "auth.json"), `${JSON.stringify({ test: credential })}\n`);
+    const result = await runDelegation(makeEnvelope(root, {
+      executionProfile: { provider: "test", model: "fixture-model" }
+    }), {
+      executorCommand: fakePi,
+      executorEnv: { FAKE_PI_SCENARIO: "success", PI_CODING_AGENT_DIR: piConfig }
+    });
+    assert.notEqual(result.status, "completed");
+    assert.equal(result.hostAcceptance.eligible, false);
+    await assert.rejects(readFile(path.join(root, "allowed.txt"), "utf8"), (error) => error.code === "ENOENT");
+    assert.doesNotMatch(JSON.stringify(result), /command-resolved-secret|oauth-access-secret|oauth-refresh-secret|derived\.example/);
+  }
+});
+
+test("Pi provider URL inventory preserves raw authority spelling and dot segments", async () => {
+  const root = await createGitRepository();
+  const piConfig = await createDirectory();
+  const rawAuthority = "PrivateTenant.Example:8443";
+  await writeFile(path.join(piConfig, "settings.json"), `${JSON.stringify({ defaultProvider: "test", defaultModel: "fixture-model" })}\n`);
+  await writeFile(path.join(piConfig, "models.json"), `${JSON.stringify({
+    providers: {
+      test: {
+        baseUrl: `https://${rawAuthority}/PrivateCarrier/../v1`,
+        api: "openai-responses",
+        apiKey: "placeholder",
+        models: []
+      }
+    }
+  })}\n`);
+  const result = await runDelegation(makeEnvelope(root, {
+    executionProfile: { provider: "test", model: "fixture-model" }
+  }), {
+    executorCommand: fakePi,
+    executorEnv: { FAKE_PI_SCENARIO: "config-url-raw-host", PI_CODING_AGENT_DIR: piConfig }
+  });
+  assert.equal(result.status, "rejected");
+  assert.ok(result.scope.breaches.includes("evidence:credential value detected"));
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(rawAuthority));
+});
+
+test("Pi provider URL projection rejects paths that exceed the decoding bound", async () => {
+  const root = await createGitRepository();
+  const piConfig = await createDirectory();
+  await writeFile(path.join(piConfig, "settings.json"), `${JSON.stringify({ defaultProvider: "test", defaultModel: "fixture-model" })}\n`);
+  await writeFile(path.join(piConfig, "models.json"), `${JSON.stringify({
+    providers: {
+      test: {
+        baseUrl: "https://provider.example/v1/carrier%25252Fopaque-value",
+        api: "openai-responses",
+        apiKey: "placeholder",
+        models: []
+      }
+    }
+  })}\n`);
+  const result = await runDelegation(makeEnvelope(root, {
+    executionProfile: { provider: "test", model: "fixture-model" }
+  }), {
+    executorCommand: fakePi,
+    executorEnv: { FAKE_PI_SCENARIO: "success", PI_CODING_AGENT_DIR: piConfig }
+  });
+  assert.notEqual(result.status, "completed");
+  assert.equal(result.hostAcceptance.eligible, false);
+  assert.match(result.executor.summary, /decoding bound/);
+  assert.doesNotMatch(JSON.stringify(result), /opaque-value/);
+  await assert.rejects(readFile(path.join(root, "allowed.txt"), "utf8"), (error) => error.code === "ENOENT");
+});
+
+test("Pi provider URL projection rejects malformed percent encoding before launch", async () => {
+  const root = await createGitRepository();
+  const piConfig = await createDirectory();
+  await writeFile(path.join(piConfig, "settings.json"), `${JSON.stringify({ defaultProvider: "test", defaultModel: "fixture-model" })}\n`);
+  await writeFile(path.join(piConfig, "models.json"), `${JSON.stringify({
+    providers: {
+      test: {
+        baseUrl: "https://provider.example/bad%ZZ/carrier%252Fopaque-value",
+        api: "openai-responses",
+        apiKey: "placeholder",
+        models: []
+      }
+    }
+  })}\n`);
+  const result = await runDelegation(makeEnvelope(root, {
+    executionProfile: { provider: "test", model: "fixture-model" }
+  }), {
+    executorCommand: fakePi,
+    executorEnv: { FAKE_PI_SCENARIO: "success", PI_CODING_AGENT_DIR: piConfig }
+  });
+  assert.notEqual(result.status, "completed");
+  assert.equal(result.hostAcceptance.eligible, false);
+  assert.match(result.executor.summary, /unsupported URL path encoding/);
+  assert.doesNotMatch(JSON.stringify(result), /opaque-value|bad%ZZ/);
+  await assert.rejects(readFile(path.join(root, "allowed.txt"), "utf8"), (error) => error.code === "ENOENT");
+});
+
+test("Pi launch binds the resolved host route and ignores hostile project settings", async () => {
+  const root = await createGitRepository();
+  await mkdir(path.join(root, ".pi"));
+  await writeFile(path.join(root, ".pi", "settings.json"), `${JSON.stringify({
+    defaultProvider: "hostile-project-provider",
+    defaultModel: "hostile-project-model"
+  })}\n`);
+  await execFileAsync("git", ["add", ".pi/settings.json"], { cwd: root });
+  await execFileAsync("git", ["commit", "-m", "test: add hostile project settings"], { cwd: root });
+  const piConfig = await createDirectory();
+  const expectedProvider = "host-selected-provider";
+  const expectedModel = "host-selected-model";
+  await writeFile(path.join(piConfig, "settings.json"), `${JSON.stringify({
+    defaultProvider: expectedProvider,
+    defaultModel: expectedModel
+  })}\n`);
+  await writeFile(path.join(piConfig, "auth.json"), `${JSON.stringify({
+    [expectedProvider]: { type: "api_key", key: "host-selected-provider-key" }
+  })}\n`);
+  const result = await runDelegation(makeEnvelope(root), {
+    executorCommand: fakePi,
+    executorEnv: {
+      FAKE_PI_SCENARIO: "route-bound",
+      FAKE_PI_EXPECTED_PROVIDER: expectedProvider,
+      FAKE_PI_EXPECTED_MODEL: expectedModel,
+      PI_CODING_AGENT_DIR: piConfig
+    }
+  });
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.changedPaths, ["allowed.txt"]);
+  assert.equal(result.executor.summary, "Resolved route was host-bound.");
+});
+
+test("Pi short credentials remain in exact-value evidence controls", async () => {
+  const root = await createGitRepository();
+  const piConfig = await createDirectory();
+  const secret = "q7z";
+  await writeFile(path.join(piConfig, "settings.json"), `${JSON.stringify({ defaultProvider: "test", defaultModel: "fixture-model" })}\n`);
+  await writeFile(path.join(piConfig, "auth.json"), `${JSON.stringify({ test: { type: "api_key", key: secret } })}\n`);
+  const result = await runDelegation(makeEnvelope(root, {
+    executionProfile: { provider: "test", model: "fixture-model" }
+  }), {
+    executorCommand: fakePi,
+    executorEnv: { FAKE_PI_SCENARIO: "config-secret", PI_CODING_AGENT_DIR: piConfig }
+  });
+  assert.equal(result.status, "rejected");
+  assert.ok(result.scope.breaches.includes("evidence:credential value detected"));
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
+});
+
 test("staged rename from an unapproved source is independently rejected", async () => {
   const root = await createGitRepository();
   await writeFile(path.join(root, "outside.txt"), "outside\n");
@@ -175,7 +495,7 @@ test("staged rename from an unapproved source is independently rejected", async 
   const result = await execute(envelope, "staged-rename");
   assert.equal(result.status, "rejected");
   assert.deepEqual(result.changedPaths, ["allowed.txt", "outside.txt"]);
-  assert.deepEqual(result.scope.breaches, ["outside.txt"]);
+  assert.deepEqual(result.scope.breaches, ["git:metadata changed during delegated execution", "outside.txt"]);
   assert.equal(result.hostAcceptance.eligible, false);
 });
 
@@ -202,4 +522,11 @@ test("credential-like validation arguments are rejected", () => {
     validation: [{ id: "unsafe", argv: ["env", "API_KEY=do-not-store", "tool"] }]
   });
   assert.throws(() => validateTaskEnvelope(environmentAssignment), (error) => error.code === "credential_in_envelope");
+  const authorizationHeader = makeEnvelope("/tmp/project", {
+    validation: [{
+      id: "unsafe",
+      argv: ["curl", "-H", ["Authorization", ["Bear", "er"].join(""), "public-preview-must-not-store"].join(": ").replace(": public", " public")]
+    }]
+  });
+  assert.throws(() => validateTaskEnvelope(authorizationHeader), (error) => error.code === "credential_in_envelope");
 });

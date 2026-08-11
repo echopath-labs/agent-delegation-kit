@@ -1,10 +1,45 @@
 import { spawn } from "node:child_process";
 
 const MAX_CAPTURE_BYTES = 128 * 1024;
+const DEFAULT_TERMINATION_GRACE_MS = 1000;
+const DEFAULT_HARD_SETTLE_GRACE_MS = 1000;
 
-function appendLimited(current, chunk) {
-  if (current.length >= MAX_CAPTURE_BYTES) return current;
-  return (current + chunk.toString("utf8")).slice(0, MAX_CAPTURE_BYTES);
+function capture(maxBytes) {
+  const chunks = [];
+  let bytes = 0;
+  let truncated = false;
+  return {
+    append(chunk) {
+      const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const remaining = maxBytes - bytes;
+      if (remaining <= 0) {
+        truncated = true;
+        return;
+      }
+      if (value.byteLength > remaining) truncated = true;
+      const retained = value.subarray(0, Math.max(0, remaining));
+      if (retained.byteLength > 0) {
+        chunks.push(retained);
+        bytes += retained.byteLength;
+      }
+    },
+    result() {
+      return { value: Buffer.concat(chunks, bytes).toString("utf8"), truncated };
+    }
+  };
+}
+
+function signalProcess(child, signal, processGroup) {
+  if (processGroup && Number.isInteger(child.pid)) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch (error) {
+      if (error?.code !== "ESRCH") child.kill(signal);
+      return;
+    }
+  }
+  child.kill(signal);
 }
 
 export function runProcess(command, args, options = {}) {
@@ -12,39 +47,83 @@ export function runProcess(command, args, options = {}) {
     cwd,
     env = process.env,
     timeoutMs = 30_000,
-    input = undefined
+    input = undefined,
+    maxCaptureBytes = MAX_CAPTURE_BYTES,
+    terminationGraceMs = DEFAULT_TERMINATION_GRACE_MS,
+    hardSettleGraceMs = DEFAULT_HARD_SETTLE_GRACE_MS,
+    processGroup = process.platform !== "win32"
   } = options;
 
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
       env,
+      detached: processGroup,
       shell: false,
       stdio: ["pipe", "pipe", "pipe"]
     });
 
-    let stdout = "";
-    let stderr = "";
+    const stdoutCapture = capture(maxCaptureBytes);
+    const stderrCapture = capture(maxCaptureBytes);
     let timedOut = false;
+    let hardKilled = false;
+    let groupCleanupAttempted = false;
+    let settled = false;
+    let forceTimer;
+    let hardSettleTimer;
+
+    const clearTimers = () => {
+      clearTimeout(timer);
+      if (forceTimer) clearTimeout(forceTimer);
+      if (hardSettleTimer) clearTimeout(hardSettleTimer);
+    };
+    const finish = (exitCode, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
+      const stdout = stdoutCapture.result();
+      const stderr = stderrCapture.result();
+      resolve({
+        exitCode,
+        signal,
+        stdout: stdout.value,
+        stderr: stderr.value,
+        stdoutTruncated: stdout.truncated,
+        stderrTruncated: stderr.truncated,
+        timedOut,
+        hardKilled,
+        groupCleanupAttempted
+      });
+    };
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      signalProcess(child, "SIGTERM", processGroup);
+      forceTimer = setTimeout(() => {
+        hardKilled = true;
+        signalProcess(child, "SIGKILL", processGroup);
+        hardSettleTimer = setTimeout(() => finish(null, "SIGKILL"), hardSettleGraceMs);
+      }, terminationGraceMs);
     }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
-      stdout = appendLimited(stdout, chunk);
+      stdoutCapture.append(chunk);
     });
     child.stderr.on("data", (chunk) => {
-      stderr = appendLimited(stderr, chunk);
+      stderrCapture.append(chunk);
     });
     child.on("error", (error) => {
-      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      clearTimers();
       reject(error);
     });
     child.on("close", (exitCode, signal) => {
-      clearTimeout(timer);
-      resolve({ exitCode, signal, stdout, stderr, timedOut });
+      if (processGroup) {
+        groupCleanupAttempted = true;
+        signalProcess(child, "SIGKILL", true);
+      }
+      finish(exitCode, signal);
     });
 
     if (input === undefined) child.stdin.end();

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { DelegationError } from "./errors.mjs";
-import { normalizeRelativePath } from "./path-policy.mjs";
+import { isReservedPath, normalizeRelativePath } from "./path-policy.mjs";
 
 const TOP_LEVEL_KEYS = new Set([
   "schemaVersion",
@@ -28,14 +28,24 @@ const REQUIRED_EVIDENCE = new Set([
 const REASONING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const CREDENTIAL_KEY = /(api.?key|access.?token|auth.?token|password|secret|credential)/i;
 const CREDENTIAL_ARGUMENT = /^(?:--?)?(?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|access[_-]?token|auth(?:entication)?[_-]?token|token|password|secret|credential)(?:[_-][A-Za-z0-9]+)*(?:=|$)/i;
+const CREDENTIAL_VALUE = /(?:^|\s)(?:authorization|proxy-authorization)\s*:\s*(?:bearer|basic)\s+\S+|^\s*(?:bearer|basic)\s+\S+|https?:\/\/[^/\s:@]+:[^/\s@]+@|\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{12,})\b/i;
 const SHELL_EXECUTABLES = new Set([
   "sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh",
   "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe"
 ]);
 const GLOB_CHARACTER = /[*?\[\]{}]/;
-const MAX_PLANNED_FILES = 100_000;
-const MAX_PLANNED_BYTES = 1_073_741_824;
+const MAX_PLANNED_FILES = 10_000;
+const MAX_PLANNED_BYTES = 67_108_864;
 const MAX_PLANNED_DEPTH = 256;
+const MAX_TEXT_LENGTH = 16_384;
+const MAX_TASK_ID_LENGTH = 128;
+const MAX_ARRAY_ITEMS = 10_000;
+const MAX_COMMANDS = 256;
+const MAX_COMMAND_ARGS = 256;
+
+function containsCredentialArgument(value) {
+  return CREDENTIAL_ARGUMENT.test(value) || CREDENTIAL_VALUE.test(value);
+}
 
 function rejectUnknown(value, allowed, field) {
   const unknown = Object.keys(value).filter((key) => !allowed.has(key));
@@ -51,18 +61,18 @@ function requireObject(value, field) {
   return value;
 }
 
-function requireString(value, field) {
-  if (typeof value !== "string" || value.trim().length === 0) {
+function requireString(value, field, { maxLength = MAX_TEXT_LENGTH } = {}) {
+  if (typeof value !== "string" || value.trim().length === 0 || value.length > maxLength || value.includes("\0")) {
     throw new DelegationError("invalid_envelope", `${field} must be a non-empty string.`);
   }
   return value;
 }
 
-function requireStringArray(value, field, { min = 0 } = {}) {
-  if (!Array.isArray(value) || value.length < min) {
+function requireStringArray(value, field, { min = 0, max = MAX_ARRAY_ITEMS, itemMaxLength = MAX_TEXT_LENGTH } = {}) {
+  if (!Array.isArray(value) || value.length < min || value.length > max) {
     throw new DelegationError("invalid_envelope", `${field} must contain at least ${min} item(s).`);
   }
-  value.forEach((item, index) => requireString(item, `${field}[${index}]`));
+  value.forEach((item, index) => requireString(item, `${field}[${index}]`, { maxLength: itemMaxLength }));
   if (new Set(value).size !== value.length) {
     throw new DelegationError("invalid_envelope", `${field} must not contain duplicates.`);
   }
@@ -97,7 +107,7 @@ function requireBoundedPositiveInteger(value, field, maximum) {
 }
 
 function validateReadiness(readiness, field = "contextPlanning.readiness") {
-  if (!Array.isArray(readiness)) {
+  if (!Array.isArray(readiness) || readiness.length > MAX_COMMANDS) {
     throw new DelegationError("invalid_envelope", `${field} must be an array.`);
   }
   const ids = new Set();
@@ -110,12 +120,12 @@ function validateReadiness(readiness, field = "contextPlanning.readiness") {
       throw new DelegationError("invalid_envelope", `${field} must not contain duplicate ids.`);
     }
     ids.add(entry.id);
-    requireStringArray(entry.argv, `${entryField}.argv`, { min: 1 });
+    requireStringArray(entry.argv, `${entryField}.argv`, { min: 1, max: MAX_COMMAND_ARGS });
     const executable = path.basename(entry.argv[0]).toLowerCase();
     if (SHELL_EXECUTABLES.has(executable)) {
       throw new DelegationError("invalid_envelope", `${entryField}.argv must invoke a non-shell executable.`);
     }
-    if (entry.argv.some((argument) => CREDENTIAL_ARGUMENT.test(argument))) {
+    if (entry.argv.some(containsCredentialArgument)) {
       throw new DelegationError("credential_in_envelope", `${entryField}.argv contains a credential-like argument.`);
     }
     if (!Number.isInteger(entry.timeoutMs) || entry.timeoutMs < 1 || entry.timeoutMs > 3_600_000) {
@@ -183,7 +193,7 @@ export function validateTaskEnvelope(input) {
   if (envelope.schemaVersion !== "1.0.0") {
     throw new DelegationError("invalid_envelope", "schemaVersion must be 1.0.0.");
   }
-  requireString(envelope.taskId, "taskId");
+  requireString(envelope.taskId, "taskId", { maxLength: MAX_TASK_ID_LENGTH });
   requireString(envelope.objective, "objective");
   requireString(envelope.expectedOutcome, "expectedOutcome");
 
@@ -208,6 +218,15 @@ export function validateTaskEnvelope(input) {
   requireStringArray(scope.forbiddenPaths, "scope.forbiddenPaths");
   if (scope.readablePaths !== undefined) requireStringArray(scope.readablePaths, "scope.readablePaths");
   [...scope.allowedPaths, ...scope.forbiddenPaths, ...(scope.readablePaths ?? [])].forEach((item) => normalizeRelativePath(item, "scope pattern"));
+  const authorityPaths = [
+    ...scope.allowedPaths,
+    ...(scope.readablePaths ?? []),
+    ...(scope.discoverablePaths ?? []),
+    ...(input.contextPlanning?.seeds ?? [])
+  ];
+  if (authorityPaths.some(isReservedPath)) {
+    throw new DelegationError("invalid_envelope", "Reserved .git and .agent-delegation paths cannot be granted as task authority.");
+  }
   if (scope.discoverablePaths !== undefined) requireNormalizedPathArray(scope.discoverablePaths, "scope.discoverablePaths");
 
   requireStringArray(envelope.instructions, "instructions", { min: 1 });
@@ -220,15 +239,15 @@ export function validateTaskEnvelope(input) {
     }
   }
 
-  if (!Array.isArray(envelope.validation)) {
+  if (!Array.isArray(envelope.validation) || envelope.validation.length > MAX_COMMANDS) {
     throw new DelegationError("invalid_envelope", "validation must be an array.");
   }
   envelope.validation.forEach((entry, index) => {
     requireObject(entry, `validation[${index}]`);
     rejectUnknown(entry, new Set(["id", "argv", "timeoutMs"]), `validation[${index}]`);
     requireString(entry.id, `validation[${index}].id`);
-    requireStringArray(entry.argv, `validation[${index}].argv`, { min: 1 });
-    if (entry.argv.some((argument) => CREDENTIAL_ARGUMENT.test(argument))) {
+    requireStringArray(entry.argv, `validation[${index}].argv`, { min: 1, max: MAX_COMMAND_ARGS });
+    if (entry.argv.some(containsCredentialArgument)) {
       throw new DelegationError("credential_in_envelope", `validation[${index}].argv contains a credential-like argument.`);
     }
     if (entry.timeoutMs !== undefined && (!Number.isInteger(entry.timeoutMs) || entry.timeoutMs < 1 || entry.timeoutMs > 3_600_000)) {

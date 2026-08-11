@@ -1,0 +1,90 @@
+# Changelog
+
+All notable public changes to Agent Delegation Kit are recorded here.
+
+## [0.1.0] - Unreleased Public Preview
+
+### Added
+
+- Agent Plugins 1.0 root manifest and local marketplace metadata.
+- Agent-neutral delegation, execution-result, evidence, scope-breach, and
+  acceptance contracts.
+- Codex-to-Pi bounded local execution.
+- Codex-to-Codex execution through an independent `codex exec` session.
+- Sanitized capsules, optional planned Node.js ESM context, deterministic
+  context manifests, readiness checks, and identity-bound corrections.
+- Native, optional loopback-router, and direct Responses Codex routes without a
+  required provider, model, proxy, or protocol bridge.
+- Host-controlled diff, scope, validation, source-integrity, and terminal
+  acceptance evidence.
+- Dependency-free package validation, deterministic tests, opt-in live smokes,
+  security reporting guidance, and public-preview CI.
+- A tested, credential-free OpenCode Go / GPT-5.6 Luna direct-route guide and
+  copy-safe worker-profile and task-envelope examples without requiring
+  OpenCodex, OpenCode CLI, or Pi.
+
+### Security
+
+- Minimized Pi, Codex, readiness, and validation environments so delegated or
+  candidate-controlled code does not inherit unrelated host credentials.
+- Moved authoritative capsule Git metadata into private task control and made
+  host review reject executor-visible Git-pointer drift and truncated evidence.
+- Added bounded host-owned filesystem evidence for ignored and index-hidden
+  mutations in source and capsule trees, plus immutable-control checks across
+  host validation.
+- Added hard child-process termination, canonical path policy, pre-read context
+  budgets, bounded dependency analysis, copy-time digest checks, strict task
+  state validation, and exclusive correction evidence files.
+- Replaced broad native Codex configuration inheritance with selected profile
+  and authentication projection; unrelated global MCP and tool configuration is
+  not exposed to the worker.
+- Added exact-value Codex result redaction, bounded structured-result fields,
+  serialized lifecycle updates, symlink-safe review archives, duplicate-safe
+  planning queues, and commit-pinned CI actions.
+- Bound worker and validation sensitive-value sets to host-private lifecycle
+  state, covered linked-worktree and alternate Git object stores, and made the
+  public file manifest reject hidden nested dependency trees.
+- Added selected-provider Pi configuration projection and source credential
+  scanning, post-run Codex auth verification, globally bounded Git-pointer
+  traversal, behavior-bearing capsule Git controls, immutable validation-grant
+  snapshots, and symlink-safe pending review evidence.
+- Added immutable Pi executor-grant snapshots, strict credential-free provider
+  URLs, and exact-value filtering for host-derived changed-path evidence.
+- Extended exact-value inventory to accepted provider endpoint components and
+  redacted host-validation evidence with the full executor-plus-validation
+  grant union.
+- Restricted Pi auth projection to fully inventoriable literal or exact-reference
+  `api_key` entries, rejecting executable/OAuth/provider-specific semantics, and
+  preserved raw plus normalized provider URL components for evidence filtering.
+- Bound the resolved Pi provider and model as mandatory process arguments while
+  disabling project-local Pi resources, preventing repository settings from
+  replacing the host-selected route.
+- Extended lifecycle binding and evidence filtering to every nonempty explicit
+  sensitive value, including short credentials, and added bounded recursive
+  decoding and splitting for percent-encoded provider URL path components.
+- Made provider URL processing fail closed before worker launch when a path
+  remains percent-decodable after the supported representation budget.
+- Rejected malformed percent encoding before Pi, direct Codex, or native Codex
+  execution so one invalid path component cannot truncate sibling evidence.
+
+### Known Limitations
+
+- The preview requires human review and is not intended for unattended or
+  production-critical execution.
+- Agent restrictions and sanitized capsules are not an operating-system
+  sandbox; child commands still run with the current user's permissions even
+  though their environment and task home are minimized.
+- Codex CLI 0.147.0 is the verified minimum. Later versions are expected to
+  work but must pass the package's compatibility and smoke checks.
+- Local validation has been completed on macOS. Ubuntu validation becomes
+  release evidence only after the public GitHub Actions workflow passes.
+- Windows behavior has not been validated and is not claimed as supported.
+- Pi and external-provider behavior depends on user-owned installation,
+  configuration, credentials, provider compatibility, and route reliability.
+- Larger external Responses requests have shown intermittent stream
+  disconnections in local dogfood; users should prefer small, independently
+  reviewable tasks during the preview.
+- npm distribution is not part of this preview; installation is from a cloned
+  GitHub repository through the packaged local marketplace.
+
+[0.1.0]: https://github.com/echopath-labs/agent-delegation-kit/releases/tag/v0.1.0

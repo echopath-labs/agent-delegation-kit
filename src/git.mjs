@@ -1,11 +1,33 @@
 import { realpath } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { DelegationError } from "./errors.mjs";
+import { minimalEnvironment } from "./environment.mjs";
 import { normalizeRelativePath } from "./path-policy.mjs";
 import { runProcess } from "./process.mjs";
 
-async function runGit(args, cwd, { allowFailure = false } = {}) {
-  const result = await runProcess("git", args, { cwd, timeoutMs: 30_000 });
+function controlledArgs(args, gitControl) {
+  return [
+    ...(gitControl?.gitDir ? [`--git-dir=${gitControl.gitDir}`, `--work-tree=${gitControl.workTree}`] : []),
+    "-c", "core.fsmonitor=false",
+    "-c", `core.hooksPath=${os.devNull}`,
+    ...args
+  ];
+}
+
+async function runGit(args, cwd, { allowFailure = false, gitControl = undefined } = {}) {
+  const env = minimalEnvironment(process.env, {
+    grants: {
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: os.devNull,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_OPTIONAL_LOCKS: "0"
+    }
+  });
+  const result = await runProcess("git", controlledArgs(args, gitControl), { cwd, env, timeoutMs: 30_000 });
+  if (result.stdoutTruncated || result.stderrTruncated) {
+    throw new DelegationError("git_output_truncated", `Git command output exceeded the evidence capture bound: git ${args.join(" ")}.`);
+  }
   if (!allowFailure && result.exitCode !== 0) {
     throw new DelegationError("git_error", `Git command failed: git ${args.join(" ")}.`);
   }
@@ -47,13 +69,13 @@ export async function resolveRepository(repository) {
   return { gitRoot, workingDirectory };
 }
 
-export async function getHead(gitRoot) {
-  const result = await runGit(["rev-parse", "HEAD"], gitRoot, { allowFailure: true });
+export async function getHead(gitRoot, gitControl = undefined) {
+  const result = await runGit(["rev-parse", "HEAD"], gitRoot, { allowFailure: true, gitControl });
   return result.exitCode === 0 ? result.stdout.trim() : null;
 }
 
-export async function getBranch(gitRoot) {
-  const result = await runGit(["symbolic-ref", "--quiet", "--short", "HEAD"], gitRoot, { allowFailure: true });
+export async function getBranch(gitRoot, gitControl = undefined) {
+  const result = await runGit(["symbolic-ref", "--quiet", "--short", "HEAD"], gitRoot, { allowFailure: true, gitControl });
   return result.exitCode === 0 ? result.stdout.trim() : "detached";
 }
 
@@ -78,25 +100,25 @@ export function parseStatusPaths(output) {
   return [...new Set(paths)].sort();
 }
 
-export async function getStatusPaths(gitRoot) {
-  const result = await runGit(["status", "--porcelain=v1", "-z", "--untracked-files=all"], gitRoot);
+export async function getStatusPaths(gitRoot, gitControl = undefined) {
+  const result = await runGit(["status", "--porcelain=v1", "-z", "--untracked-files=all"], gitRoot, { gitControl });
   return parseStatusPaths(result.stdout);
 }
 
-export async function getCommittedDiffPaths(gitRoot, headBefore, headAfter) {
+export async function getCommittedDiffPaths(gitRoot, headBefore, headAfter, gitControl = undefined) {
   if (!headBefore || !headAfter || headBefore === headAfter) return [];
-  const result = await runGit(["diff", "--name-only", "-z", `${headBefore}..${headAfter}`], gitRoot);
+  const result = await runGit(["diff", "--name-only", "-z", `${headBefore}..${headAfter}`], gitRoot, { gitControl });
   return result.stdout
     .split("\0")
     .filter(Boolean)
     .map((item) => normalizeRelativePath(item, "Git diff path"));
 }
 
-export async function collectGitState(gitRoot) {
+export async function collectGitState(gitRoot, gitControl = undefined) {
   const [head, branch, dirtyPaths] = await Promise.all([
-    getHead(gitRoot),
-    getBranch(gitRoot),
-    getStatusPaths(gitRoot)
+    getHead(gitRoot, gitControl),
+    getBranch(gitRoot, gitControl),
+    getStatusPaths(gitRoot, gitControl)
   ]);
   return { head, branch, dirtyPaths };
 }

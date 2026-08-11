@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,11 +10,24 @@ const MANIFEST_FIELDS = new Set([
   "repository", "license", "keywords", "extensions"
 ]);
 const ALLOWED_TOP_LEVEL = new Set([
-  ".agents", ".git", ".gitignore", ".npmignore", "LICENSE", "README.md", "CONTRIBUTING.md",
+  ".agents", ".git", ".github", ".gitignore", ".npmignore", "CHANGELOG.md",
+  "CONTRIBUTING.md", "LICENSE", "README.md", "RELEASING.md", "SECURITY.md",
   "plugin.json", "package.json", "skills", "contracts", "hosts", "executors",
-  "adapters", "bin", "src", "scripts", "test", "examples"
+  "adapters", "bin", "src", "scripts", "test", "examples", "docs", "public-files.json"
 ]);
-const PRIVATE_NAMES = new Set(["openspec", "opendomain", ".pi", "auth.json", ".DS_Store"]);
+const PRIVATE_NAMES = new Set(["openspec", "opendomain", ".pi", "auth.json", ".ds_store", "node_modules"]);
+const SENSITIVE_EXTENSIONS = /\.(?:pem|key|p12|pfx|log|patch|diff|har)$/iu;
+const ALLOWED_ACTIONS = new Set([
+  "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+  "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020"
+]);
+const REVIEWED_WORKFLOW_SHA256 = "6ef860d3bf95bf059a1dcc5e9569cdc46fb277411ef7bef55447c9d3916d6533";
+const REQUIRED_PREVIEW_FILES = [
+  "CHANGELOG.md",
+  "RELEASING.md",
+  "SECURITY.md",
+  ".github/workflows/validate.yml"
+];
 
 async function pathExists(candidate) {
   try {
@@ -26,7 +40,7 @@ async function pathExists(candidate) {
 
 async function walk(root, current = root, output = []) {
   for (const entry of await readdir(current, { withFileTypes: true })) {
-    if (entry.name === ".git" || entry.name === "node_modules") continue;
+    if (entry.name === ".git" || (current === root && entry.name === "node_modules")) continue;
     const absolute = path.join(current, entry.name);
     const relative = path.relative(root, absolute).replaceAll(path.sep, "/");
     output.push({ entry, absolute, relative });
@@ -52,16 +66,80 @@ function validateManifest(manifest, errors) {
   }
 }
 
+async function validatePreviewFiles(root, errors) {
+  for (const relative of REQUIRED_PREVIEW_FILES) {
+    if (!(await pathExists(path.join(root, ...relative.split("/"))))) {
+      errors.push(`${relative} is required for public preview.`);
+    }
+  }
+
+  const workflowPath = path.join(root, ".github", "workflows", "validate.yml");
+  const workflowRoot = path.dirname(workflowPath);
+  if (await pathExists(workflowRoot)) {
+    const workflows = (await readdir(workflowRoot)).sort();
+    if (workflows.length !== 1 || workflows[0] !== "validate.yml") {
+      errors.push("Public preview must contain only .github/workflows/validate.yml.");
+    }
+  }
+  if (!(await pathExists(workflowPath))) return;
+  const workflow = await readFile(workflowPath, "utf8");
+  const workflowSha256 = createHash("sha256").update(workflow).digest("hex");
+  if (workflowSha256 !== REVIEWED_WORKFLOW_SHA256) {
+    errors.push("CI workflow bytes must exactly match the reviewed public-preview workflow.");
+  }
+  const requiredPatterns = [
+    [/^permissions:\s*\n\s+contents:\s*read\s*$/m, "CI must grant only read access to repository contents."],
+    [/uses:\s*actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\b/, "CI must pin the reviewed checkout v7 commit."],
+    [/uses:\s*actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020\b/, "CI must pin the reviewed setup-node v7 commit."],
+    [/node-version:\s*20\.20\.2\b/, "CI must use the verified Node.js 20 baseline."],
+    [/package-manager-cache:\s*false\b/, "CI must disable unused automatic package-manager caching."],
+    [/run:\s*npm run check\b/, "CI must run the deterministic package checks."],
+    [/run:\s*npm pack --dry-run --json\b/, "CI must inspect the package dry-run."],
+  ];
+  for (const [pattern, message] of requiredPatterns) {
+    if (!pattern.test(workflow)) errors.push(message);
+  }
+  if (/\bpull_request_target\s*:/u.test(workflow)) {
+    errors.push("CI must not run public-preview validation with pull_request_target.");
+  }
+  if (/\bsecrets\s*\./u.test(workflow)) {
+    errors.push("CI validation must not require repository secrets.");
+  }
+  const actionReferences = [...workflow.matchAll(/\buses:\s*([^\s#]+)/gu)].map((match) => match[1]);
+  for (const reference of actionReferences) {
+    if (!ALLOWED_ACTIONS.has(reference)) errors.push(`CI action is not on the reviewed exact allowlist: ${reference}.`);
+  }
+  if (/\bwrite-all\b|^\s*[A-Za-z_-]+:\s*write\s*$/mu.test(workflow)) {
+    errors.push("CI validation must not grant write permissions.");
+  }
+}
+
 export async function validatePackage(root) {
   const errors = [];
   const resolvedRoot = await realpath(root);
   let manifest;
+  let publicFiles;
   try {
     manifest = JSON.parse(await readFile(path.join(resolvedRoot, "plugin.json"), "utf8"));
   } catch (error) {
     errors.push(`plugin.json is missing or invalid JSON: ${error.message}`);
   }
   if (manifest) validateManifest(manifest, errors);
+  try {
+    const publicManifest = JSON.parse(await readFile(path.join(resolvedRoot, "public-files.json"), "utf8"));
+    publicFiles = publicManifest?.files;
+    if (
+      publicManifest?.schemaVersion !== "1.0.0" ||
+      !Array.isArray(publicFiles) ||
+      publicFiles.some((item) => typeof item !== "string" || item.length === 0 || item.startsWith("/") || item.includes("\\") || item.split("/").includes("..")) ||
+      JSON.stringify(publicFiles) !== JSON.stringify([...new Set(publicFiles)].sort())
+    ) {
+      throw new Error("manifest must contain one sorted unique normalized file list");
+    }
+  } catch (error) {
+    errors.push(`public-files.json is missing or invalid: ${error.message}`);
+  }
+  await validatePreviewFiles(resolvedRoot, errors);
 
   try {
     const marketplace = JSON.parse(await readFile(path.join(resolvedRoot, ".agents", "plugins", "marketplace.json"), "utf8"));
@@ -79,6 +157,19 @@ export async function validatePackage(root) {
   }
 
   const entries = await walk(resolvedRoot);
+  if (publicFiles) {
+    const actualFiles = entries
+      .filter((item) => item.entry.isFile())
+      .map((item) => item.relative)
+      .sort();
+    if (JSON.stringify(actualFiles) !== JSON.stringify(publicFiles)) {
+      const expected = new Set(publicFiles);
+      const actual = new Set(actualFiles);
+      const extra = actualFiles.filter((item) => !expected.has(item));
+      const missing = publicFiles.filter((item) => !actual.has(item));
+      errors.push(`Public file manifest mismatch; extra: ${extra.join(", ") || "none"}; missing: ${missing.join(", ") || "none"}.`);
+    }
+  }
   const manifests = entries.filter((item) => item.entry.isFile() && item.entry.name === "plugin.json");
   if (manifests.length !== 1 || manifests[0]?.relative !== "plugin.json") {
     errors.push("The package must contain exactly one plugin.json at its root.");
@@ -103,13 +194,19 @@ export async function validatePackage(root) {
   }
 
   for (const item of entries) {
-    if (item.relative.split("/").some((part) => PRIVATE_NAMES.has(part))) {
+    if (item.entry.isSymbolicLink()) {
+      errors.push(`Symbolic links are not allowed in the public package: ${item.relative}.`);
+    }
+    if (item.relative.split("/").some((part) => PRIVATE_NAMES.has(part.toLowerCase()))) {
       errors.push(`Private or generated path is not allowed: ${item.relative}.`);
+    }
+    if (item.entry.isFile() && SENSITIVE_EXTENSIONS.test(item.relative)) {
+      errors.push(`Sensitive artifact type is not allowed: ${item.relative}.`);
     }
     if (item.entry.isFile() && /(^|\/)\.env(?:\.|$)/.test(item.relative)) {
       errors.push(`Environment file is not allowed: ${item.relative}.`);
     }
-    if (item.entry.isFile() && /\.(?:md|json|mjs|js|txt)$/.test(item.relative)) {
+    if (item.entry.isFile() && /\.(?:md|json|mjs|js|txt|ya?ml)$/i.test(item.relative)) {
       const text = await readFile(item.absolute, "utf8");
       if (/\/Users\/[A-Za-z0-9._-]+\//.test(text) || /[A-Za-z]:\\Users\\[^\\]+\\/.test(text)) {
         errors.push(`User-specific absolute path found in ${item.relative}.`);

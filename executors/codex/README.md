@@ -20,10 +20,16 @@ The executor writes only inside a sanitized capsule by default. It must return
 claims remain separate from host-observed Git and command evidence. Corrections
 use `codex exec resume` with the original thread; they never select `--last`.
 
-A direct-provider worker receives a generated task-scoped Codex base
-configuration rather than the user's global `config.toml` or `auth.json`. The
-configuration binds the provider, base URL, `responses` wire API, credential
+A Codex worker receives a generated or selected task-scoped configuration
+rather than the user's complete global `config.toml`. Native authentication is
+projected into private task state without unrelated global capabilities. A
+custom named route uses only its credential-free selected profile snapshot. A
+direct-provider configuration binds the provider, base URL, `responses` wire API, credential
 environment-variable name, model, and workspace-write sandbox. Its bytes and
 the exact disposable capsule project trust are materialized before first use.
 Its bytes and permissions are verified again before correction resume; drift stops execution
-instead of selecting another route.
+instead of selecting another route. Worker HOME and temporary directories are
+task-scoped, and output truncation makes the result ineligible for acceptance.
+Structured result fields are size-bounded and exact injected credential values
+are redacted before persistence; credential-bearing changed-path claims are
+rejected instead of rewritten.

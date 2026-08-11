@@ -57,7 +57,9 @@
     "changedPaths": ["src/example.mjs", "test/example.test.mjs"],
     "scopeBreaches": [],
     "candidatePatchSha256": "sha256:example-patch-fingerprint",
-    "evidenceAvailable": true
+    "evidenceAvailable": true,
+    "privateControlChanged": false,
+    "credentialEvidenceSafe": true
   },
   "validations": [
     { "id": "focused-test", "status": "passed", "exitCode": 0, "summary": "passed" }
@@ -67,6 +69,15 @@
     "requestCount": 1,
     "inputTokens": "unavailable",
     "outputTokens": "unavailable"
+  },
+  "reviewIdentity": {
+    "schemaVersion": "1.0.0",
+    "stateRevision": 2,
+    "correctionSequence": 0,
+    "resultIdentity": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "privateControlFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "candidatePatchSha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
   },
   "acceptance": {
     "status": "pending",

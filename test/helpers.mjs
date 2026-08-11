@@ -23,6 +23,7 @@ export async function createDirectory() {
 
 export async function makeMinimalPlugin(root, manifest) {
   await mkdir(path.join(root, ".agents", "plugins"), { recursive: true });
+  await mkdir(path.join(root, ".github", "workflows"), { recursive: true });
   await mkdir(path.join(root, "skills", "demo"), { recursive: true });
   await mkdir(path.join(root, "contracts"), { recursive: true });
   await writeFile(path.join(root, "plugin.json"), JSON.stringify(manifest, null, 2));
@@ -31,8 +32,66 @@ export async function makeMinimalPlugin(root, manifest) {
     plugins: [{ name: manifest.name, source: { source: "local", path: "." } }]
   }, null, 2));
   await writeFile(path.join(root, "skills", "demo", "SKILL.md"), "---\nname: demo\ndescription: Demo skill.\n---\n");
-  await writeFile(path.join(root, "contracts", "task-envelope.schema.json"), "{}\n");
-  await writeFile(path.join(root, "contracts", "execution-result.schema.json"), "{}\n");
+  await writeFile(path.join(root, "CHANGELOG.md"), "# Changelog\n\n## [0.1.0] - Unreleased Public Preview\n");
+  await writeFile(path.join(root, "RELEASING.md"), "# Public Preview Release Checklist\n");
+  await writeFile(path.join(root, "SECURITY.md"), "# Security Policy\n");
+  await writeFile(path.join(root, ".github", "workflows", "validate.yml"), [
+    "name: Validate",
+    "",
+    "on:",
+    "  push:",
+    "  pull_request:",
+    "",
+    "permissions:",
+    "  contents: read",
+    "",
+    "concurrency:",
+    "  group: validate-${{ github.workflow }}-${{ github.ref }}",
+    "  cancel-in-progress: true",
+    "",
+    "jobs:",
+    "  package:",
+    "    runs-on: ubuntu-latest",
+    "    timeout-minutes: 10",
+    "    steps:",
+    "      - name: Check out repository",
+    "        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7",
+    "      - name: Use Node.js 20",
+    "        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7",
+    "        with:",
+    "          node-version: 20.20.2",
+    "          package-manager-cache: false",
+    "      - name: Validate package and run deterministic tests",
+    "        run: npm run check",
+    "      - name: Inspect package contents",
+    "        run: npm pack --dry-run --json",
+    ""
+  ].join("\n"));
+  for (const contract of [
+    "task-envelope.schema.json",
+    "context-manifest.schema.json",
+    "execution-result.schema.json",
+    "codex-worker-result.schema.json",
+    "host-review-packet.schema.json"
+  ]) {
+    await writeFile(path.join(root, "contracts", contract), "{}\n");
+  }
+  const files = [
+    ".agents/plugins/marketplace.json",
+    ".github/workflows/validate.yml",
+    "CHANGELOG.md",
+    "RELEASING.md",
+    "SECURITY.md",
+    "contracts/codex-worker-result.schema.json",
+    "contracts/context-manifest.schema.json",
+    "contracts/execution-result.schema.json",
+    "contracts/host-review-packet.schema.json",
+    "contracts/task-envelope.schema.json",
+    "plugin.json",
+    "public-files.json",
+    "skills/demo/SKILL.md"
+  ];
+  await writeFile(path.join(root, "public-files.json"), JSON.stringify({ schemaVersion: "1.0.0", files }, null, 2));
 }
 
 export function makeEnvelope(root, overrides = {}) {

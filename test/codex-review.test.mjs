@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, appendFile, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { archiveAndCleanupTerminalTask, recordTerminalDecision } from "../src/codex/actions.mjs";
 import { executeCodexDelegation, prepareCodexDelegation } from "../src/codex/controller.mjs";
-import { buildHostReviewPacket, extractAggregateMetrics } from "../src/codex/review.mjs";
+import { buildHostReviewPacket, extractAggregateMetrics, persistPendingReview } from "../src/codex/review.mjs";
+import { authorizeCorrection, readTaskState } from "../src/codex/state.mjs";
 import { createGitRepository, makeEnvelope } from "./helpers.mjs";
 
 const profileRegistry = {
@@ -54,6 +56,28 @@ async function executeFixture(overrides = {}) {
   return { root, prepared, execution };
 }
 
+function canonicalize(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sha256(value) {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function rehashReview(review) {
+  const { reviewIdentity, ...packet } = review.packet;
+  const input = { packet, candidatePatchSha256: sha256(review.candidatePatch ?? "") };
+  review.packet.reviewIdentity = {
+    ...reviewIdentity,
+    candidatePatchSha256: input.candidatePatchSha256,
+    fingerprint: sha256(canonicalize(input))
+  };
+}
+
 test("host review separates worker claims, observed evidence, and validation", async () => {
   const fixture = await executeFixture();
   await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), "bounded change\n");
@@ -100,6 +124,20 @@ test("validation-time source mutation makes completion ineligible", async () => 
   assert(review.packet.unresolvedRisks.some((item) => item.includes("source workspace changed")));
 });
 
+test("validation-time source Git-control mutation makes completion ineligible", async () => {
+  const fixture = await executeFixture();
+  await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), "bounded change\n");
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution, {
+    runProcess: async () => {
+      await appendFile(path.join(fixture.root, ".git", "config"), "\n[adk-test]\n\tvalue = true\n");
+      return { exitCode: 0, signal: null, timedOut: false, stdout: "passed", stderr: "" };
+    }
+  });
+  assert.equal(review.sourceUnchanged, false);
+  assert.equal(review.packet.acceptance.eligible, false);
+  assert(review.packet.unresolvedRisks.some((item) => item.includes("source workspace changed")));
+});
+
 test("validation-time out-of-scope capsule mutation is final scope evidence", async () => {
   const fixture = await executeFixture({
     validation: [{
@@ -119,6 +157,190 @@ test("validation-time out-of-scope capsule mutation is final scope evidence", as
   assert.deepEqual(review.packet.hostObserved.scopeBreaches, ["private.txt"]);
   assert.equal(review.packet.acceptance.eligible, false);
   assert.match(review.candidatePatch, /validation mutation/);
+});
+
+test("validation grants written into candidate files are never retained as evidence", async () => {
+  const secret = "validation-only-secret-value";
+  const fixture = await executeFixture();
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution, {
+    validationEnv: { VALIDATION_SECRET: secret },
+    runProcess: async () => {
+      await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), `${secret}\n`);
+      return { exitCode: 0, signal: null, timedOut: false, stdout: "passed", stderr: "" };
+    }
+  });
+  assert.equal(review.packet.hostObserved.credentialEvidenceSafe, false);
+  assert.equal(review.packet.acceptance.eligible, false);
+  assert.equal(review.candidatePatch, "");
+  assert.doesNotMatch(JSON.stringify(review), new RegExp(secret));
+});
+
+test("validation credential-bearing paths are omitted from retained review evidence", async () => {
+  const secret = "validation-path-secret-value";
+  const fixture = await executeFixture({
+    scope: { allowedPaths: ["*.txt"], readablePaths: ["README.md"], forbiddenPaths: [] }
+  });
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution, {
+    validationEnv: { VALIDATION_SECRET: secret },
+    runProcess: async () => {
+      await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, `${secret}.txt`), "safe contents\n");
+      return { exitCode: 0, signal: null, timedOut: false, stdout: "passed", stderr: "" };
+    }
+  });
+  assert.equal(review.packet.hostObserved.credentialEvidenceSafe, false);
+  assert.deepEqual(review.packet.hostObserved.changedPaths, []);
+  assert.ok(review.packet.hostObserved.scopeBreaches.includes("evidence:credential value detected"));
+  assert.equal(review.packet.acceptance.eligible, false);
+  assert.equal(review.candidatePatch, "");
+  assert.doesNotMatch(JSON.stringify(review), new RegExp(secret));
+});
+
+test("Codex validation output redacts the complete worker and validation grant union", async () => {
+  const root = await createGitRepository();
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-review-state-"));
+  const prepared = await prepareCodexDelegation({
+    envelope: makeEnvelope(root, { executionProfile: "worker", scope: { readablePaths: ["README.md"] } }),
+    profileRegistry,
+    stateRoot,
+    hostInstanceId: "desktop-host-1"
+  }, { compatibilityProcess });
+  const codexHome = path.join(prepared.capsule.taskRoot, "codex-home");
+  const secret = "codex-worker-secret-decoded-by-validation";
+  await mkdir(codexHome, { recursive: true });
+  await writeFile(path.join(codexHome, "auth.json"), `${JSON.stringify({ OPENAI_API_KEY: secret })}\n`);
+  const execution = await executeCodexDelegation(prepared, {
+    codexHome,
+    runProcess: async () => ({
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      stderr: "",
+      stdout: `${JSON.stringify({ type: "thread.started", thread_id: "worker-validation-redaction" })}\n${JSON.stringify({ type: "turn.completed", usage: {} })}\n`
+    }),
+    readResultFile: async () => JSON.stringify(completed)
+  });
+  await writeFile(
+    path.join(prepared.capsule.capsuleRoot, "allowed.txt"),
+    `${Buffer.from(secret, "utf8").toString("base64")}\n`
+  );
+  const review = await buildHostReviewPacket(prepared, execution, {
+    runProcess: async () => ({ exitCode: 0, signal: null, timedOut: false, stdout: secret, stderr: "" })
+  });
+  assert.equal(review.packet.validations[0].status, "passed");
+  assert.match(review.packet.validations[0].summary, /REDACTED_EXACT_VALUE/);
+  assert.equal(review.packet.acceptance.eligible, true);
+  assert.doesNotMatch(JSON.stringify(review), new RegExp(secret));
+});
+
+test("validation uses the same immutable grant snapshot for binding and execution", async () => {
+  const oldSecret = "first-validation-secret";
+  const newSecret = "second-validation-secret";
+  let reads = 0;
+  const validationEnv = {};
+  Object.defineProperty(validationEnv, "VALIDATION_SECRET", {
+    enumerable: true,
+    get() {
+      reads += 1;
+      return reads === 1 ? oldSecret : newSecret;
+    }
+  });
+  const fixture = await executeFixture();
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution, {
+    validationEnv,
+    runProcess: async (_command, _args, options) => {
+      await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), `${options.env.VALIDATION_SECRET}\n`);
+      return { exitCode: 0, signal: null, timedOut: false, stdout: "passed", stderr: "" };
+    }
+  });
+  assert.equal(reads, 1);
+  assert.equal(review.packet.hostObserved.credentialEvidenceSafe, false);
+  assert.equal(review.packet.acceptance.eligible, false);
+  assert.equal(review.candidatePatch, "");
+});
+
+test("native credential rotation before review invalidates raw candidate evidence", async () => {
+  const root = await createGitRepository();
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-review-state-"));
+  const prepared = await prepareCodexDelegation({
+    envelope: makeEnvelope(root, { executionProfile: "worker", scope: { readablePaths: ["README.md"] } }),
+    profileRegistry,
+    stateRoot,
+    hostInstanceId: "desktop-host-1"
+  }, { compatibilityProcess });
+  const codexHome = path.join(prepared.capsule.taskRoot, "codex-home");
+  const oldSecret = "old-native-secret-value";
+  const newSecret = "new-native-secret-value";
+  await mkdir(codexHome, { recursive: true });
+  await writeFile(path.join(codexHome, "auth.json"), `${JSON.stringify({ OPENAI_API_KEY: oldSecret })}\n`);
+  const execution = await executeCodexDelegation(prepared, {
+    codexHome,
+    runProcess: async () => ({
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      stderr: "",
+      stdout: `${JSON.stringify({ type: "thread.started", thread_id: "worker-thread-1" })}\n${JSON.stringify({ type: "turn.completed", usage: {} })}\n`
+    }),
+    readResultFile: async () => JSON.stringify(completed)
+  });
+  await writeFile(path.join(prepared.capsule.capsuleRoot, "allowed.txt"), `${oldSecret}\n`);
+  await writeFile(path.join(codexHome, "auth.json"), `${JSON.stringify({ OPENAI_API_KEY: newSecret })}\n`);
+  const review = await buildHostReviewPacket(prepared, execution);
+  assert.equal(review.packet.hostObserved.credentialEvidenceSafe, false);
+  assert.equal(review.packet.acceptance.eligible, false);
+  assert.equal(review.candidatePatch, "");
+  assert.doesNotMatch(JSON.stringify(review), new RegExp(oldSecret));
+});
+
+test("pending review evidence refuses a validation-created directory symlink", async () => {
+  const fixture = await executeFixture();
+  const redirected = await mkdtemp(path.join(os.tmpdir(), "adk-review-redirect-"));
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution, {
+    runProcess: async () => {
+      await symlink(redirected, path.join(fixture.prepared.capsule.taskRoot, "evidence"));
+      return { exitCode: 0, signal: null, timedOut: false, stdout: "passed", stderr: "" };
+    }
+  });
+  await assert.rejects(
+    persistPendingReview(fixture.prepared, review),
+    (error) => error.code === "evidence_path_invalid"
+  );
+});
+
+test("ignored capsule mutation remains visible to host filesystem evidence", async () => {
+  const fixture = await executeFixture({
+    scope: { allowedPaths: ["allowed.txt", ".gitignore"], readablePaths: ["README.md"] }
+  });
+  await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, ".gitignore"), "ignored.txt\n");
+  await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "ignored.txt"), "hidden mutation\n");
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution);
+  assert.ok(review.packet.hostObserved.changedPaths.includes("ignored.txt"));
+  assert.deepEqual(review.packet.hostObserved.scopeBreaches, ["ignored.txt"]);
+  assert.equal(review.packet.acceptance.eligible, false);
+});
+
+test("validation-time private control mutation makes completion ineligible", async () => {
+  const fixture = await executeFixture();
+  await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), "bounded change\n");
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution, {
+    runProcess: async () => {
+      await writeFile(path.join(fixture.prepared.capsule.taskRoot, "capsule.json"), "{}\n");
+      return { exitCode: 0, signal: null, timedOut: false, stdout: "passed", stderr: "" };
+    }
+  });
+  assert.equal(review.packet.hostObserved.privateControlChanged, true);
+  assert.equal(review.packet.acceptance.eligible, false);
+  assert(review.packet.unresolvedRisks.some((item) => item.includes("Private task controls changed")));
+});
+
+test("worker-time private control mutation blocks validation and acceptance", async () => {
+  const fixture = await executeFixture();
+  await writeFile(path.join(fixture.prepared.capsule.taskRoot, "capsule.json"), "{}\n");
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution);
+  assert.equal(review.packet.hostObserved.privateControlChanged, true);
+  assert.ok(review.packet.hostObserved.scopeBreaches.includes("task:private control changed"));
+  assert.equal(review.packet.validations[0].status, "not_run");
+  assert.equal(review.packet.acceptance.eligible, false);
 });
 
 test("metrics keep only bounded aggregates and mark unavailable usage", () => {
@@ -184,9 +406,77 @@ test("terminal host decision archives review evidence before task-scoped cleanup
   const decided = await recordTerminalDecision(fixture.prepared, review, "accept", "desktop-host-1");
   assert.equal(decided.packet.acceptance.status, "accepted");
   const archiveRoot = await mkdtemp(path.join(os.tmpdir(), "adk-review-archive-"));
+  const symlinkRoot = `${archiveRoot}-link`;
+  await symlink(archiveRoot, symlinkRoot);
+  await assert.rejects(
+    archiveAndCleanupTerminalTask(fixture.prepared, decided, symlinkRoot),
+    (error) => error.code === "invalid_archive_root"
+  );
+  await access(fixture.prepared.capsule.taskRoot);
   const archive = await archiveAndCleanupTerminalTask(fixture.prepared, decided, archiveRoot);
   assert.equal(JSON.parse(await readFile(archive.packetPath, "utf8")).acceptance.status, "accepted");
   assert.match(await readFile(archive.patchPath, "utf8"), /accepted change/);
   await assert.rejects(access(fixture.prepared.capsule.taskRoot));
   await access(fixture.root);
+});
+
+test("acceptance refuses candidate changes made after host review", async () => {
+  const fixture = await executeFixture();
+  const candidate = path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt");
+  await writeFile(candidate, "reviewed change\n");
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution);
+  await writeFile(candidate, "changed after review\n");
+  await assert.rejects(
+    recordTerminalDecision(fixture.prepared, review, "accept", "desktop-host-1"),
+    (error) => error.code === "stale_review"
+  );
+});
+
+test("acceptance refuses a tampered review packet", async () => {
+  const fixture = await executeFixture();
+  await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), "reviewed change\n");
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution);
+  review.packet.unresolvedRisks.push("injected after review");
+  await assert.rejects(
+    recordTerminalDecision(fixture.prepared, review, "accept", "desktop-host-1"),
+    (error) => error.code === "review_identity_mismatch"
+  );
+});
+
+test("acceptance refuses an old review after correction authorization", async () => {
+  const fixture = await executeFixture();
+  await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), "reviewed change\n");
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution);
+  const state = await readTaskState(fixture.prepared.statePath);
+  await authorizeCorrection(fixture.prepared.statePath, {
+    taskId: fixture.prepared.envelope.taskId,
+    profileFingerprint: fixture.prepared.profile.fingerprint,
+    capsuleBaseline: fixture.prepared.capsule.baseline,
+    contextManifestFingerprint: fixture.prepared.capsule.contextManifestFingerprint,
+    priorResultIdentity: state.resultIdentity
+  });
+  await assert.rejects(
+    recordTerminalDecision(fixture.prepared, review, "accept", "desktop-host-1"),
+    (error) => error.code === "stale_review"
+  );
+});
+
+test("acceptance recomputes eligibility instead of trusting a rehashed packet", async () => {
+  const fixture = await executeFixture();
+  await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), "reviewed change\n");
+  const failingValidation = async () => ({
+    exitCode: 1,
+    signal: null,
+    timedOut: false,
+    stdout: "failed",
+    stderr: ""
+  });
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution, { runProcess: failingValidation });
+  assert.equal(review.packet.acceptance.eligible, false);
+  review.packet.acceptance.eligible = true;
+  rehashReview(review);
+  await assert.rejects(
+    recordTerminalDecision(fixture.prepared, review, "accept", "desktop-host-1", { runProcess: failingValidation }),
+    (error) => error.code === "stale_review" || error.code === "acceptance_ineligible"
+  );
 });

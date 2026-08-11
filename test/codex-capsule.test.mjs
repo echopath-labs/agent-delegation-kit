@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import {
   cleanupCapsule,
   collectCandidateEvidence,
@@ -14,9 +16,10 @@ import {
 } from "../src/codex/capsule.mjs";
 import { validateTaskEnvelope } from "../src/envelope.mjs";
 import { resolveRepository } from "../src/git.mjs";
-import { createGitRepository, makeEnvelope } from "./helpers.mjs";
+import { createDirectory, createGitRepository, makeEnvelope } from "./helpers.mjs";
 
 const workerResultSchemaPath = fileURLToPath(new URL("../contracts/codex-worker-result.schema.json", import.meta.url));
+const execFileAsync = promisify(execFile);
 const profile = { name: "worker", external: true };
 
 async function setup(overrides = {}) {
@@ -187,4 +190,53 @@ test("candidate evidence derives changed paths, scope breaches, and a patch", as
   assert.match(evidence.candidatePatch, /candidate/);
   assert.match(evidence.candidatePatchSha256, /^sha256:/);
   assert.equal((await verifySourceUnchanged(fixture.repository, capsule)).unchanged, true);
+});
+
+test("candidate patch uses a clean host index and reports authoritative index drift", async () => {
+  const fixture = await setup();
+  const capsule = await prepareCapsule({ ...fixture, profile, workerResultSchemaPath });
+  await writeFile(path.join(capsule.capsuleRoot, "README.md"), "changed despite index flag\n");
+  await execFileAsync("git", [
+    `--git-dir=${capsule.gitControl.gitDir}`,
+    `--work-tree=${capsule.gitControl.workTree}`,
+    "update-index",
+    "--skip-worktree",
+    "README.md"
+  ], { cwd: capsule.capsuleRoot });
+  const evidence = await collectCandidateEvidence(capsule, fixture.envelope.scope);
+  assert.ok(evidence.scopeBreaches.includes("task:private control changed"));
+  assert.match(evidence.candidatePatch, /changed despite index flag/);
+  assert.doesNotMatch(evidence.scopeBreaches.join("\n"), /candidate patch incomplete/);
+});
+
+test("candidate evidence omits a patch containing an exact granted credential", async () => {
+  const root = await createGitRepository();
+  const envelope = makeEnvelope(root, { scope: { allowedPaths: ["allowed.txt"], readablePaths: ["README.md"] } });
+  const repository = await resolveRepository({ root, workingDirectory: "." });
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-capsule-state-"));
+  const capsule = await prepareCapsule({ envelope, repository, profile, stateRoot, workerResultSchemaPath });
+  const secret = "exact-provider-credential-for-evidence";
+  await writeFile(path.join(capsule.capsuleRoot, "allowed.txt"), `leaked ${secret}\n`);
+  const evidence = await collectCandidateEvidence(capsule, envelope.scope, { sensitiveValues: [secret] });
+  assert.equal(evidence.credentialEvidenceSafe, false);
+  assert.equal(evidence.candidatePatch, "");
+  assert.equal(evidence.candidatePatchSha256, null);
+  assert.ok(evidence.scopeBreaches.includes("evidence:credential value detected"));
+});
+
+test("capsule private Git metadata drift is part of immutable control evidence", async () => {
+  const root = await createGitRepository();
+  const envelope = makeEnvelope(root, { scope: { readablePaths: ["README.md"] } });
+  const capsule = await prepareCapsule({
+    envelope,
+    repository: { gitRoot: await realpath(root) },
+    profile,
+    stateRoot: await createDirectory(),
+    workerResultSchemaPath
+  });
+  await mkdir(path.join(capsule.gitControl.gitDir, "info"), { recursive: true });
+  await writeFile(path.join(capsule.gitControl.gitDir, "info", "attributes"), "*.txt -diff\n");
+  const evidence = await collectCandidateEvidence(capsule, envelope.scope);
+  assert.equal(evidence.privateControlChanged, true);
+  assert.ok(evidence.scopeBreaches.includes("task:private control changed"));
 });

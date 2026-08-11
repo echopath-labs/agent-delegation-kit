@@ -61,6 +61,12 @@ node ../bin/agent-delegation-kit.mjs correct-codex \
 Added readable authority or changed planned context requires a new task instead
 of correction resume.
 
+For the tested direct OpenCode Go / GPT-5.6 Luna route, use
+`codex-task-envelope.opencode-go-luna.json` with
+`codex-worker-profiles.opencode-go-luna.json`. Both files are credential-free;
+the complete provider setup, optional live smoke, Codex Desktop prompt, review
+flow, and troubleshooting guide is in `../docs/opencode-go-luna.md`.
+
 ## 5. Host acceptance and cleanup
 
 Only an eligible review packet with no unresolved host risk may be accepted.

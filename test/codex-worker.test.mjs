@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -11,6 +11,7 @@ import {
   transitionTaskState
 } from "../src/codex/state.mjs";
 import { resolveWorkerProfile } from "../src/codex/profile.mjs";
+import { sensitiveUrlValues } from "../src/redact.mjs";
 import { buildCodexExecInvocation, directProviderConfig, parseCodexEventStream, prepareTaskCodexHome, runCodexWorker } from "../src/codex/worker.mjs";
 import { makeEnvelope } from "./helpers.mjs";
 
@@ -25,7 +26,7 @@ const profile = {
   fingerprint: "sha256:profile"
 };
 
-function directProfile() {
+function directProfile(baseUrl = "https://provider.example/v1") {
   return resolveWorkerProfile({
     schemaVersion: "1.0.0",
     profiles: {
@@ -37,7 +38,7 @@ function directProfile() {
         environmentAllowlist: ["HTTPS_PROXY"],
         provider: {
           name: "compatible-provider",
-          baseUrl: "https://provider.example/v1",
+          baseUrl,
           wireApi: "responses",
           credentialEnv: "PROVIDER_API_KEY"
         }
@@ -56,7 +57,8 @@ async function fixture() {
     capsuleRoot,
     controlRoot,
     resultSchemaPath: path.join(controlRoot, "result.schema.json"),
-    baseline: "baseline-1"
+    baseline: "baseline-1",
+    privateControlBaseline: { fingerprint: "sha256:private-control" }
   };
   const envelope = makeEnvelope(taskRoot, { executionProfile: profile.name });
   return { taskRoot, capsule, envelope };
@@ -155,6 +157,189 @@ test("direct provider worker injects only the selected credential and approved e
   assert.equal(observed.env.HTTPS_PROXY, "http://proxy.invalid");
   assert.equal(observed.env.UNRELATED_SECRET, undefined);
   assert.doesNotMatch(JSON.stringify(execution), /credential-value/);
+});
+
+test("Codex worker redacts exact injected credentials from every result narrative", async () => {
+  const { capsule, envelope } = await fixture();
+  const selected = directProfile();
+  const secret = "opaque-provider-credential-value";
+  const execution = await runCodexWorker({ envelope, profile: selected, capsule }, {
+    environment: { PROVIDER_API_KEY: secret },
+    runProcess: async () => ({
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      stderr: "",
+      stdout: `${JSON.stringify({ type: "thread.started", thread_id: "direct-thread-secret" })}\n${JSON.stringify({ type: "turn.completed", usage: {} })}\n`
+    }),
+    readResultFile: async () => JSON.stringify({
+      schemaVersion: "1.0.0",
+      taskId: "test-task",
+      status: "failed",
+      summary: `summary ${secret}`,
+      changedFiles: [],
+      validations: [{ id: `check-${secret}`, status: "failed", summary: `validation ${secret}` }],
+      residualRisks: [`risk ${secret}`],
+      blocking: { code: `blocked-${secret}`, message: `message ${secret}` }
+    })
+  });
+  const serialized = JSON.stringify(execution.workerResult);
+  assert.doesNotMatch(serialized, new RegExp(secret));
+  assert.match(serialized, /REDACTED_EXACT_VALUE/);
+});
+
+test("Codex provider URL path components join the exact sensitive-value inventory", async () => {
+  const { capsule, envelope } = await fixture();
+  const secret = "opaque-codex-provider-path-secret";
+  const selected = directProfile(`https://provider.example/v1/${secret}`);
+  const execution = await runCodexWorker({ envelope, profile: selected, capsule }, {
+    environment: { PROVIDER_API_KEY: "ordinary-provider-key" },
+    runProcess: async () => ({
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      stderr: "",
+      stdout: `${JSON.stringify({ type: "thread.started", thread_id: "direct-url-secret" })}\n${JSON.stringify({ type: "turn.completed", usage: {} })}\n`
+    }),
+    readResultFile: async () => JSON.stringify({
+      ...completedResult(),
+      summary: `Provider endpoint included ${secret}.`
+    })
+  });
+  assert.equal(execution.workerResult.status, "completed");
+  assert.match(execution.workerResult.summary, /REDACTED_EXACT_VALUE/);
+  assert.doesNotMatch(JSON.stringify(execution), new RegExp(secret));
+});
+
+test("provider URL inventory preserves raw authority, hostname labels, and dot-segment carriers", () => {
+  const values = sensitiveUrlValues("https://PrivateTenant.Example:8443/PrivateCarrier/../carrier%252Fopaque-secret");
+  assert.ok(values.includes("PrivateTenant.Example:8443"));
+  assert.ok(values.includes("PrivateTenant.Example"));
+  assert.ok(values.includes("PrivateTenant"));
+  assert.ok(values.includes("PrivateCarrier"));
+  assert.ok(values.includes("privatetenant.example"));
+  assert.ok(values.includes("https://privatetenant.example:8443/carrier%252Fopaque-secret"));
+  assert.ok(values.includes("opaque-secret"));
+});
+
+test("provider URL inventory rejects paths that remain decodable beyond its bound", () => {
+  assert.throws(
+    () => sensitiveUrlValues("https://provider.example/v1/carrier%25252Fopaque-value"),
+    (error) => error.name === "SensitiveUrlDecodeBudgetError" && !error.message.includes("opaque-value")
+  );
+});
+
+test("provider URL inventory rejects malformed percent encoding without skipping sibling paths", () => {
+  assert.throws(
+    () => sensitiveUrlValues("https://provider.example/bad%ZZ/carrier%252Fopaque-value"),
+    (error) => error.name === "SensitiveUrlEncodingError" && !error.message.includes("opaque-value")
+  );
+});
+
+test("native Codex rejects malformed provider URL encoding before runner invocation", async () => {
+  const { capsule, envelope } = await fixture();
+  const codexHome = path.join(capsule.taskRoot, "codex-home");
+  await mkdir(codexHome, { recursive: true });
+  await writeFile(
+    path.join(codexHome, "config.toml"),
+    'base_url = "https://provider.example/bad%ZZ/carrier%252Fopaque-value"\n',
+    { mode: 0o600 }
+  );
+  let runnerCalls = 0;
+  const execution = await runCodexWorker({ envelope, profile, capsule }, {
+    codexHome,
+    runProcess: async () => {
+      runnerCalls += 1;
+      throw new Error("runner must not start");
+    }
+  });
+  assert.equal(runnerCalls, 0);
+  assert.equal(execution.workerResult.status, "failed");
+  assert.equal(execution.workerResult.blocking.code, "provider_url_encoding_unsupported");
+  assert.doesNotMatch(JSON.stringify(execution), /opaque-value|bad%ZZ/);
+});
+
+test("Codex worker redacts exact credentials from failed event messages", async () => {
+  const { capsule, envelope } = await fixture();
+  const selected = directProfile();
+  const secret = "opaque-event-credential-value";
+  const execution = await runCodexWorker({ envelope, profile: selected, capsule }, {
+    environment: { PROVIDER_API_KEY: secret },
+    runProcess: async () => ({
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      stderr: "",
+      stdout: `${JSON.stringify({ type: "thread.started", thread_id: "direct-thread-event" })}\n${JSON.stringify({ type: "turn.failed", error: { code: "upstream", message: `failed with ${secret}` } })}\n`
+    })
+  });
+  assert.doesNotMatch(JSON.stringify(execution), new RegExp(secret));
+  assert.match(execution.workerResult.blocking.message, /REDACTED_EXACT_VALUE/);
+});
+
+test("Codex worker redacts authenticated proxy grants from failed event codes", async () => {
+  const { capsule, envelope } = await fixture();
+  const proxy = "http://proxy-user:proxy-pass@127.0.0.1:7890";
+  const execution = await runCodexWorker({ envelope, profile, capsule }, {
+    codexHome: path.join(capsule.taskRoot, "codex-home"),
+    environment: { HTTPS_PROXY: proxy },
+    runProcess: async () => ({
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      stderr: "",
+      stdout: `${JSON.stringify({ type: "thread.started", thread_id: "proxy-event-thread" })}\n${JSON.stringify({ type: "turn.failed", error: { code: `proxy:${proxy}`, message: "route failed" } })}\n`
+    })
+  });
+  assert.doesNotMatch(JSON.stringify(execution), /proxy-pass/);
+  assert.match(execution.workerResult.blocking.code, /REDACTED_EXACT_VALUE/);
+});
+
+test("Codex worker rejects sensitive values disguised as changed paths", async () => {
+  const { capsule, envelope } = await fixture();
+  const selected = directProfile();
+  const secret = "opaque-path-credential-value";
+  const result = { ...completedResult(), changedFiles: [`allowed-${secret}.txt`] };
+  const execution = await runCodexWorker({ envelope, profile: selected, capsule }, {
+    environment: { PROVIDER_API_KEY: secret },
+    runProcess: async () => ({
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      stderr: "",
+      stdout: `${JSON.stringify({ type: "thread.started", thread_id: "direct-thread-path" })}\n${JSON.stringify({ type: "turn.completed", usage: {} })}\n`
+    }),
+    readResultFile: async () => JSON.stringify(result)
+  });
+  assert.equal(execution.workerResult.status, "failed");
+  assert.equal(execution.workerResult.blocking.code, "credential_in_worker_result");
+  assert.doesNotMatch(JSON.stringify(execution), new RegExp(secret));
+});
+
+test("Codex worker replaces raw structured output with the sanitized result", async () => {
+  const { capsule, envelope } = await fixture();
+  const selected = directProfile();
+  const secret = "opaque-persisted-credential-value";
+  await mkdir(capsule.controlRoot, { recursive: true });
+  const resultPath = path.join(capsule.controlRoot, "worker-result-0.json");
+  const execution = await runCodexWorker({ envelope, profile: selected, capsule }, {
+    environment: { PROVIDER_API_KEY: secret },
+    runProcess: async () => {
+      await writeFile(resultPath, JSON.stringify({ ...completedResult(), summary: `done ${secret}` }));
+      return {
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        stderr: "",
+        stdout: `${JSON.stringify({ type: "thread.started", thread_id: "direct-thread-persisted" })}\n${JSON.stringify({ type: "turn.completed", usage: {} })}\n`
+      };
+    }
+  });
+  assert.equal(execution.workerResult.status, "completed");
+  const persisted = await readFile(resultPath, "utf8");
+  assert.doesNotMatch(persisted, new RegExp(secret));
+  assert.match(persisted, /REDACTED_EXACT_VALUE/);
+  assert.equal((await stat(resultPath)).mode & 0o777, 0o600);
 });
 
 test("direct provider correction accepts the exact task-scoped project trust configuration", async () => {
@@ -323,6 +508,27 @@ test("malformed structured output cannot be inferred as completion", async () =>
       stdout: `${JSON.stringify({ type: "thread.started", thread_id: "worker-thread-1" })}\n${JSON.stringify({ type: "turn.completed" })}\n`
     }),
     readResultFile: async () => "{not valid json"
+  });
+  assert.equal(result.workerResult.status, "failed");
+  assert.equal(result.workerResult.blocking.code, "malformed_worker_result");
+});
+
+test("worker result files over the input bound are rejected before parsing", async () => {
+  const { capsule, envelope } = await fixture();
+  await mkdir(capsule.controlRoot, { recursive: true });
+  const resultPath = path.join(capsule.controlRoot, "worker-result-0.json");
+  const result = await runCodexWorker({ envelope, profile, capsule }, {
+    codexHome: path.join(capsule.taskRoot, "codex-home"),
+    runProcess: async () => {
+      await writeFile(resultPath, "x".repeat(4 * 1024 * 1024 + 1));
+      return {
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        stderr: "",
+        stdout: `${JSON.stringify({ type: "thread.started", thread_id: "oversized-result-thread" })}\n${JSON.stringify({ type: "turn.completed" })}\n`
+      };
+    }
   });
   assert.equal(result.workerResult.status, "failed");
   assert.equal(result.workerResult.blocking.code, "malformed_worker_result");

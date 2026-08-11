@@ -200,12 +200,46 @@ test("readiness mutation is detected and the provisional capsule is discarded", 
   assert.deepEqual(await readdir(fixture.stateRoot), []);
 });
 
+test("readiness private-control mutation is detected before worker execution", async () => {
+  const fixture = await plannedFixture([{
+    id: "must-not-mutate-controls",
+    argv: [process.execPath, "--version"],
+    timeoutMs: 1000,
+    acceptableExitCodes: [0]
+  }]);
+  await assert.rejects(
+    prepareCodexDelegation({
+      envelope: fixture.envelope,
+      profileRegistry,
+      stateRoot: fixture.stateRoot,
+      hostInstanceId: "desktop-host-1"
+    }, {
+      compatibilityProcess,
+      readinessProcess: async (_command, _args, options) => {
+        await writeFile(path.join(options.cwd, "..", "control", "task-envelope.json"), "{}\n");
+        return { exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "" };
+      }
+    }),
+    (error) => error.code === "context_readiness_failed" && error.details.readiness.mutationDetected === true
+  );
+  assert.deepEqual(await readdir(fixture.stateRoot), []);
+});
+
 test("explicit task reload remains compatible when legacy readiness evidence is absent", async () => {
   const prepared = await preparedFixture();
   await rm(path.join(prepared.capsule.controlRoot, "readiness-evidence.json"));
   const loaded = await loadCodexDelegation(prepared.capsule.taskRoot, profileRegistry);
   assert.equal(loaded.readiness.outcome, "not_configured");
   assert.equal(loaded.capsule.inputMetadata.length, 1);
+});
+
+test("task reload rejects immutable private-control drift", async () => {
+  const prepared = await preparedFixture();
+  await writeFile(prepared.capsule.resultSchemaPath, "{}\n");
+  await assert.rejects(
+    loadCodexDelegation(prepared.capsule.taskRoot, profileRegistry),
+    (error) => error.code === "task_state_mismatch" && /immutable private controls/.test(error.message)
+  );
 });
 
 test("controller executes and resumes correction in the same delegated session", async () => {
@@ -234,6 +268,72 @@ test("controller executes and resumes correction in the same delegated session",
   assert.equal(corrected.state.lifecycleState, "awaiting_review");
   assert.equal(corrected.state.executorThreadId, "delegated-thread-1");
   assert.equal(corrected.state.correctionSequence, 1);
+});
+
+test("correction refuses a changed worker sensitive-value set before invoking Codex", async () => {
+  const prepared = await preparedFixture();
+  const codexHome = path.join(prepared.capsule.taskRoot, "codex-home");
+  await mkdir(codexHome, { recursive: true });
+  await writeFile(path.join(codexHome, "auth.json"), `${JSON.stringify({ OPENAI_API_KEY: "first-worker-secret" })}\n`);
+  let workerCalls = 0;
+  const runProcess = async (...args) => {
+    workerCalls += 1;
+    return workerProcess()(...args);
+  };
+  const first = await executeCodexDelegation(prepared, {
+    codexHome,
+    runProcess,
+    readResultFile: async () => JSON.stringify(result("First result"))
+  });
+  assert.equal(workerCalls, 1);
+  await writeFile(path.join(codexHome, "auth.json"), `${JSON.stringify({ OPENAI_API_KEY: "rotated-worker-secret" })}\n`);
+  const reloaded = await loadCodexDelegation(prepared.capsule.taskRoot, profileRegistry);
+  const corrected = await correctCodexDelegation(reloaded, {
+    taskId: prepared.envelope.taskId,
+    profileFingerprint: prepared.profile.fingerprint,
+    capsuleBaseline: prepared.capsule.baseline,
+    priorResultIdentity: first.state.resultIdentity,
+    prompt: "Fix the identified defect."
+  }, {
+    compatibilityProcess,
+    codexHome,
+    runProcess,
+    readResultFile: async () => JSON.stringify(result("Must not run"))
+  });
+  assert.equal(workerCalls, 1);
+  assert.equal(corrected.workerResult.status, "failed");
+  assert.equal(corrected.workerResult.blocking.code, "sensitive_grant_changed");
+});
+
+test("worker auth drift is rejected before any Codex narrative is parsed", async () => {
+  const prepared = await preparedFixture();
+  const codexHome = path.join(prepared.capsule.taskRoot, "codex-home");
+  const firstSecret = "first-runtime-secret";
+  const refreshedSecret = "refreshed-runtime-secret";
+  await mkdir(codexHome, { recursive: true });
+  await writeFile(path.join(codexHome, "auth.json"), `${JSON.stringify({ OPENAI_API_KEY: firstSecret })}\n`);
+  let resultReads = 0;
+  const execution = await executeCodexDelegation(prepared, {
+    codexHome,
+    runProcess: async () => {
+      await writeFile(path.join(codexHome, "auth.json"), `${JSON.stringify({ OPENAI_API_KEY: refreshedSecret })}\n`);
+      return {
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        stderr: refreshedSecret,
+        stdout: `${JSON.stringify({ type: "thread.started", thread_id: "delegated-thread-1" })}\n${JSON.stringify({ type: "turn.completed", usage: {} })}\n`
+      };
+    },
+    readResultFile: async () => {
+      resultReads += 1;
+      return JSON.stringify({ ...result(), summary: refreshedSecret });
+    }
+  });
+  assert.equal(resultReads, 0);
+  assert.equal(execution.workerResult.status, "failed");
+  assert.equal(execution.workerResult.blocking.code, "sensitive_grant_changed");
+  assert.doesNotMatch(JSON.stringify(execution), new RegExp(refreshedSecret));
 });
 
 test("planned correction requires the unchanged manifest identity before any route or worker call", async () => {

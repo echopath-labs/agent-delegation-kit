@@ -242,3 +242,23 @@ test("planner evaluates maxDepth from the deterministic shortest closure path", 
     "src/z.mjs"
   ]);
 });
+
+test("planner suppresses duplicate pending dependencies before queueing", async () => {
+  const root = await fixture({
+    "src/entry.mjs": "entry",
+    "src/dep.mjs": "dep"
+  });
+  const duplicateReferences = Array.from({ length: 10_000 }, () => ({
+    kind: "static",
+    classification: "local",
+    specifier: "./dep.mjs"
+  }));
+  const manifest = await planDelegationContext(envelope(root), root, {
+    analyze: ({ relativePath }) => ({
+      analyzer: "node-esm",
+      references: relativePath === "src/entry.mjs" ? duplicateReferences : []
+    })
+  });
+  assert.deepEqual(manifest.selectedFiles.map((item) => item.relativePath), ["src/dep.mjs", "src/entry.mjs"]);
+  assert.equal(manifest.selectedFiles.find((item) => item.relativePath === "src/dep.mjs").inclusionReasons.length, 1);
+});

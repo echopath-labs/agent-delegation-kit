@@ -1,4 +1,8 @@
-import { conciseOutput } from "./redact.mjs";
+import { constants as fsConstants } from "node:fs";
+import { open } from "node:fs/promises";
+import path from "node:path";
+import { conciseOutput, containsExactSensitiveValue } from "./redact.mjs";
+import { createIsolatedEnvironment } from "./environment.mjs";
 import { validateTaskEnvelope } from "./envelope.mjs";
 import {
   collectGitState,
@@ -7,13 +11,16 @@ import {
   resolveRepository
 } from "./git.mjs";
 import { evaluatePathScope } from "./path-policy.mjs";
-import { runExecutor } from "./executor.mjs";
+import { changedFilesystemPaths, snapshotFilesystem, snapshotGitControls } from "./filesystem-evidence.mjs";
+import { executorSecurityEvidence, runExecutor } from "./executor.mjs";
 import { runProcess } from "./process.mjs";
 
-function skippedValidations(commands, reason) {
+const MAX_SENSITIVE_EVIDENCE_BYTES = 64 * 1024 * 1024;
+
+function skippedValidations(commands, reason, sensitiveValues = []) {
   return commands.map((command) => ({
-    id: command.id,
-    argv: command.argv,
+    id: conciseOutput(command.id, 200, sensitiveValues),
+    argv: command.argv.map((argument) => conciseOutput(argument, 1000, sensitiveValues)),
     status: "not_run",
     exitCode: null,
     output: "",
@@ -21,35 +28,49 @@ function skippedValidations(commands, reason) {
   }));
 }
 
-async function runValidations(commands, workingDirectory) {
+async function runValidations(commands, workingDirectory, options = {}) {
   const results = [];
-  for (const command of commands) {
-    let processResult;
-    try {
-      processResult = await runProcess(command.argv[0], command.argv.slice(1), {
-        cwd: workingDirectory,
-        timeoutMs: command.timeoutMs ?? 120_000
-      });
-    } catch (error) {
+  const sensitiveValues = [...new Set([
+    ...(options.redactionValues ?? []),
+    ...Object.values(options.validationEnv ?? {})
+  ].filter((value) => typeof value === "string" && value.length > 0))];
+  const isolated = await createIsolatedEnvironment(options.validationEnvironment ?? process.env, {
+    prefix: "adk-validation-",
+    grants: options.validationEnv ?? {}
+  });
+  try {
+    for (const command of commands) {
+      let processResult;
+      try {
+        processResult = await runProcess(command.argv[0], command.argv.slice(1), {
+          cwd: workingDirectory,
+          env: isolated.env,
+          timeoutMs: command.timeoutMs ?? 120_000
+        });
+      } catch (error) {
+        results.push({
+          id: conciseOutput(command.id, 200, sensitiveValues),
+          argv: command.argv.map((argument) => conciseOutput(argument, 1000, sensitiveValues)),
+          status: "not_run",
+          exitCode: null,
+          output: conciseOutput(error.message, 4000, sensitiveValues),
+          reason: "spawn_error"
+        });
+        continue;
+      }
+      const truncated = processResult.stdoutTruncated || processResult.stderrTruncated;
+      const passed = processResult.exitCode === 0 && !processResult.signal && !processResult.timedOut && !truncated;
       results.push({
-        id: command.id,
-        argv: command.argv,
-        status: "not_run",
-        exitCode: null,
-        output: conciseOutput(error.message),
-        reason: "spawn_error"
+        id: conciseOutput(command.id, 200, sensitiveValues),
+        argv: command.argv.map((argument) => conciseOutput(argument, 1000, sensitiveValues)),
+        status: passed ? "passed" : "failed",
+        exitCode: processResult.exitCode,
+        output: conciseOutput(`${processResult.stdout}\n${processResult.stderr}`, 4000, sensitiveValues),
+        reason: truncated ? "output_truncated" : processResult.timedOut ? "timeout" : processResult.signal ? `signal:${processResult.signal}` : null
       });
-      continue;
     }
-    const passed = processResult.exitCode === 0 && !processResult.signal && !processResult.timedOut;
-    results.push({
-      id: command.id,
-      argv: command.argv,
-      status: passed ? "passed" : "failed",
-      exitCode: processResult.exitCode,
-      output: conciseOutput(`${processResult.stdout}\n${processResult.stderr}`),
-      reason: processResult.timedOut ? "timeout" : processResult.signal ? `signal:${processResult.signal}` : null
-    });
+  } finally {
+    await isolated.cleanup();
   }
   return results;
 }
@@ -58,36 +79,142 @@ function mergePaths(...collections) {
   return [...new Set(collections.flat())].sort();
 }
 
+function sanitizeChangedPathEvidence(changedPaths, security, additionalValues = []) {
+  if (security.credentialEvidenceTrusted !== true) {
+    return { paths: [], breach: "evidence:credential inventory changed" };
+  }
+  const values = [...new Set([...(security.sensitiveValues ?? []), ...additionalValues]
+    .filter((value) => typeof value === "string" && value.length > 0))];
+  const paths = changedPaths.filter((relative) => !containsExactSensitiveValue(relative, values));
+  return {
+    paths,
+    breach: paths.length === changedPaths.length ? null : "evidence:credential value detected"
+  };
+}
+
+async function inspectChangedFilesForSensitiveValues(repositoryRoot, changedPaths, security, additionalValues = []) {
+  if (security.credentialEvidenceTrusted !== true) return "evidence:credential inventory changed";
+  const values = [...new Set([...(security.sensitiveValues ?? []), ...additionalValues]
+    .filter((value) => typeof value === "string" && value.length > 0))];
+  if (values.length === 0) return null;
+  const needles = values.map((value) => Buffer.from(value));
+  let totalBytes = 0;
+  for (const relative of changedPaths) {
+    const absolute = path.join(repositoryRoot, ...relative.split("/"));
+    let handle;
+    try {
+      handle = await open(absolute, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0));
+      const before = await handle.stat();
+      if (!before.isFile()) continue;
+      totalBytes += before.size;
+      if (!Number.isSafeInteger(before.size) || before.size < 0 || totalBytes > MAX_SENSITIVE_EVIDENCE_BYTES) {
+        return "evidence:credential scan exceeded";
+      }
+      const content = await handle.readFile();
+      const after = await handle.stat();
+      if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size || after.mtimeMs !== before.mtimeMs) {
+        return "evidence:credential scan unstable";
+      }
+      if (needles.some((needle) => content.includes(needle))) return "evidence:credential value detected";
+    } catch (error) {
+      if (error?.code !== "ENOENT") return "evidence:credential scan unavailable";
+    } finally {
+      await handle?.close().catch(() => {});
+    }
+  }
+  return null;
+}
+
+async function collectPostflight(repository, before, filesystemBefore, gitControlsBefore) {
+  const [after, filesystemAfter, gitControlsAfter] = await Promise.all([
+    collectGitState(repository.gitRoot),
+    snapshotFilesystem(repository.gitRoot, { exclude: [".git"] }),
+    snapshotGitControls(repository.gitRoot)
+  ]);
+  const committedPaths = await getCommittedDiffPaths(repository.gitRoot, before.head, after.head);
+  return {
+    after,
+    committedPaths,
+    filesystemPaths: changedFilesystemPaths(filesystemBefore, filesystemAfter),
+    gitControlsChanged: gitControlsBefore.fingerprint !== gitControlsAfter.fingerprint
+  };
+}
+
 export async function runDelegation(input, options = {}) {
   const envelope = validateTaskEnvelope(input);
+  const validationEnv = Object.freeze(Object.fromEntries(Object.entries(options.validationEnv ?? {})));
+  const validationSensitiveValues = Object.values(validationEnv)
+    .filter((value) => typeof value === "string" && value.length > 0);
   const repository = await resolveRepository(envelope.repository);
   const before = await collectGitState(repository.gitRoot);
   enforceDirtyTreePolicy(before, envelope.repository.dirtyTree);
+  const [filesystemBefore, gitControlsBefore] = await Promise.all([
+    snapshotFilesystem(repository.gitRoot, { exclude: [".git"] }),
+    snapshotGitControls(repository.gitRoot)
+  ]);
 
   const executor = await runExecutor(envelope, {
     ...options,
     workingDirectory: repository.workingDirectory
   });
+  const executorSecurity = executorSecurityEvidence(executor);
+  const evidenceSensitiveValues = [...new Set([
+    ...(executorSecurity.sensitiveValues ?? []),
+    ...validationSensitiveValues
+  ])];
 
-  let after = await collectGitState(repository.gitRoot);
-  let committedPaths = await getCommittedDiffPaths(repository.gitRoot, before.head, after.head);
-  let changedPaths = mergePaths(after.dirtyPaths, committedPaths);
+  let postflight = await collectPostflight(repository, before, filesystemBefore, gitControlsBefore);
+  let after = postflight.after;
+  let changedPaths = mergePaths(after.dirtyPaths, postflight.committedPaths, postflight.filesystemPaths);
+  const baselinePathEvidence = sanitizeChangedPathEvidence(
+    before.dirtyPaths,
+    executorSecurity,
+    validationSensitiveValues
+  );
+  let pathEvidence = sanitizeChangedPathEvidence(changedPaths, executorSecurity, validationSensitiveValues);
+  changedPaths = pathEvidence.paths;
   let breaches = evaluatePathScope(changedPaths, envelope.scope);
+  if (baselinePathEvidence.breach) breaches.push(baselinePathEvidence.breach);
+  if (pathEvidence.breach) breaches.push(pathEvidence.breach);
+  const initialCredentialBreach = await inspectChangedFilesForSensitiveValues(
+    repository.gitRoot,
+    changedPaths,
+    executorSecurity,
+    validationSensitiveValues
+  );
+  if (initialCredentialBreach) breaches.push(initialCredentialBreach);
+  if (postflight.gitControlsChanged) breaches.push("git:metadata changed during delegated execution");
   if (before.head !== after.head) breaches.push("git:HEAD changed during delegated execution");
   if (before.branch !== after.branch) breaches.push("git:branch changed during delegated execution");
   breaches = [...new Set(breaches)].sort();
 
   let validations;
   if (breaches.length > 0) {
-    validations = skippedValidations(envelope.validation, "scope_breach");
+    validations = skippedValidations(envelope.validation, "scope_breach", evidenceSensitiveValues);
   } else if (executor.reportedStatus !== "completed") {
-    validations = skippedValidations(envelope.validation, `executor_${executor.reportedStatus}`);
+    validations = skippedValidations(envelope.validation, `executor_${executor.reportedStatus}`, evidenceSensitiveValues);
   } else {
-    validations = await runValidations(envelope.validation, repository.workingDirectory);
-    after = await collectGitState(repository.gitRoot);
-    committedPaths = await getCommittedDiffPaths(repository.gitRoot, before.head, after.head);
-    changedPaths = mergePaths(after.dirtyPaths, committedPaths);
+    validations = await runValidations(envelope.validation, repository.workingDirectory, {
+      ...options,
+      validationEnv,
+      redactionValues: evidenceSensitiveValues
+    });
+    postflight = await collectPostflight(repository, before, filesystemBefore, gitControlsBefore);
+    after = postflight.after;
+    changedPaths = mergePaths(after.dirtyPaths, postflight.committedPaths, postflight.filesystemPaths);
+    pathEvidence = sanitizeChangedPathEvidence(changedPaths, executorSecurity, validationSensitiveValues);
+    changedPaths = pathEvidence.paths;
     breaches = evaluatePathScope(changedPaths, envelope.scope);
+    if (baselinePathEvidence.breach) breaches.push(baselinePathEvidence.breach);
+    if (pathEvidence.breach) breaches.push(pathEvidence.breach);
+    const finalCredentialBreach = await inspectChangedFilesForSensitiveValues(
+      repository.gitRoot,
+      changedPaths,
+      executorSecurity,
+      validationSensitiveValues
+    );
+    if (finalCredentialBreach) breaches.push(finalCredentialBreach);
+    if (postflight.gitControlsChanged) breaches.push("git:metadata changed during delegated execution");
     if (before.head !== after.head) breaches.push("git:HEAD changed during delegated execution");
     if (before.branch !== after.branch) breaches.push("git:branch changed during delegated execution");
     breaches = [...new Set(breaches)].sort();
@@ -119,7 +246,7 @@ export async function runDelegation(input, options = {}) {
       branch: before.branch,
       headBefore: before.head,
       headAfter: after.head,
-      dirtyPathsBefore: before.dirtyPaths
+      dirtyPathsBefore: baselinePathEvidence.paths
     },
     changedPaths,
     scope: {

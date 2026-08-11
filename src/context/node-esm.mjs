@@ -8,6 +8,7 @@ const REGEX_KEYWORDS = new Set([
   "return", "throw", "case", "delete", "void", "typeof", "instanceof",
   "in", "of", "yield", "await", "else", "do", "new"
 ]);
+const MAX_ANALYZER_TOKENS = 200_000;
 
 function token(type, value, start, end, lineBreak = false) {
   return { type, value, start, end, lineBreak };
@@ -144,6 +145,10 @@ function tokenize(source) {
   let hadLineBreak = false;
   let previous = null;
   while (index < source.length) {
+    if (tokens.length >= MAX_ANALYZER_TOKENS) {
+      issues.push("dependency analyzer token budget exceeded");
+      break;
+    }
     const character = source[index];
     if (/\s/u.test(character)) {
       if (character === "\n" || character === "\r") hadLineBreak = true;
@@ -256,22 +261,35 @@ function isLiteralSpecifier(candidate) {
   return candidate?.type === "string" && typeof candidate.value === "string" && candidate.value.length > 0;
 }
 
-function findStringAfter(tokens, start, stopAtClose = false) {
-  let depth = 0;
-  for (let index = start; index < tokens.length; index += 1) {
+function staticFromTargets(tokens) {
+  const targets = new Map();
+  const active = new Map();
+  let braces = 0;
+  let parentheses = 0;
+  let brackets = 0;
+  const depthKey = () => `${braces}:${parentheses}:${brackets}`;
+  for (let index = 0; index < tokens.length; index += 1) {
     const current = tokens[index];
-    if (current.value === "{" || current.value === "(" || current.value === "[") depth += 1;
-    if (current.value === "}" || current.value === ")" || current.value === "]") {
-      if (depth === 0 && stopAtClose) return null;
-      depth = Math.max(0, depth - 1);
+    if (current.value === "}") braces = Math.max(0, braces - 1);
+    if (current.value === ")") parentheses = Math.max(0, parentheses - 1);
+    if (current.value === "]") brackets = Math.max(0, brackets - 1);
+    const key = depthKey();
+    if (current.type === "identifier" && (current.value === "import" || current.value === "export")) {
+      active.set(key, index);
+    } else if (current.value === "from" && tokens[index + 1]?.type === "string" && active.has(key)) {
+      targets.set(active.get(key), tokens[index + 1]);
+      active.delete(key);
+    } else if (current.value === ";") {
+      active.delete(key);
     }
-    if (current.value === ";" && depth === 0) return null;
-    if (current.value === "from" && tokens[index + 1]?.type === "string") return tokens[index + 1];
+    if (current.value === "{") braces += 1;
+    if (current.value === "(") parentheses += 1;
+    if (current.value === "[") brackets += 1;
   }
-  return null;
+  return targets;
 }
 
-function classifyImport(tokens, index) {
+function classifyImport(tokens, index, fromTargets) {
   const current = tokens[index];
   const next = tokens[index + 1];
   const previous = tokens[index - 1];
@@ -287,15 +305,15 @@ function classifyImport(tokens, index) {
     return reference("unresolved", "<non-literal>", "non-literal dynamic import");
   }
   if (isLiteralSpecifier(next)) return reference("static", next.value);
-  const from = findStringAfter(tokens, index + 1);
+  const from = fromTargets.get(index);
   if (from) return reference("static", from.value);
   return reference("unresolved", "<ambiguous>", "ambiguous static import syntax");
 }
 
-function classifyExport(tokens, index) {
+function classifyExport(tokens, index, fromTargets) {
   const next = tokens[index + 1];
   if (next?.value !== "*" && next?.value !== "{") return null;
-  const from = findStringAfter(tokens, index + 1);
+  const from = fromTargets.get(index);
   if (from) return reference("static", from.value);
   return null;
 }
@@ -314,13 +332,14 @@ export function analyzeNodeEsm({ relativePath, source }) {
   }
   const { tokens, issues } = tokenize(source);
   const references = issues.map((reason) => reference("unresolved", "<lexical-error>", reason));
+  const fromTargets = staticFromTargets(tokens);
   for (let index = 0; index < tokens.length; index += 1) {
     if (tokens[index].type !== "identifier") continue;
     if (tokens[index].value === "import") {
-      const found = classifyImport(tokens, index);
+      const found = classifyImport(tokens, index, fromTargets);
       if (found) references.push(found);
     } else if (tokens[index].value === "export") {
-      const found = classifyExport(tokens, index);
+      const found = classifyExport(tokens, index, fromTargets);
       if (found) references.push({ ...found, kind: "reexport" });
     }
   }
