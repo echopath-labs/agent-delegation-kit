@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/echopath-labs/agent-delegation-kit",
   "repository": "https://github.com/echopath-labs/agent-delegation-kit",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "agent-delegation",
     "codex",

@@ -29,6 +29,12 @@ All notable public changes to Agent Delegation Kit are recorded here.
 - A tested, credential-free OpenCode Go / GPT-5.6 Luna direct-route guide and
   copy-safe worker-profile and task-envelope examples without requiring
   OpenCodex, OpenCode CLI, or Pi.
+- English-default and Simplified Chinese onboarding, bilingual Agent-first
+  tutorials, a manual reference, and installed Skill guidance that lets the
+  coordinating Agent prepare credential-free private task artifacts from user
+  intent.
+- Apache License 2.0 project licensing with explicit EchoPath Labs attribution
+  in `NOTICE`.
 
 ### Security
 

@@ -92,6 +92,10 @@ test("opt-in supported Codex discovers the portable plugin and packaged skill", 
     const wrapperSupport = JSON.parse((await runCodex(process.execPath, [wrapper, "support"], environment)).stdout);
     assert.equal(wrapperSupport.routes[0].id, "codex-codex", "Installed Skill-local wrapper did not resolve the packaged CLI.");
     assert.equal(wrapperSupport.routes[0].status, "public-preview");
+    const wrapperDoctor = JSON.parse((await runCodex(process.execPath, [wrapper, "doctor"], environment)).stdout);
+    assert.equal(wrapperDoctor.state, "ready", "Installed Skill-local doctor did not verify the isolated plugin.");
+    assert.equal(wrapperDoctor.executor.command, "codex exec");
+    assert.equal(wrapperDoctor.executor.additionalInstallationRequired, false);
     context.diagnostic(JSON.stringify({
       codexVersion: version,
       marketplace: "agent-delegation-kit-local",

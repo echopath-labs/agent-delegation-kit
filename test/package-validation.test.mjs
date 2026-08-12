@@ -14,12 +14,124 @@ const validManifest = {
   name: "fixture-plugin"
 };
 
+async function copyCurrentPublicPackage() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "adk-public-package-"));
+  const manifest = JSON.parse(await readFile(path.join(packageRoot, "public-files.json"), "utf8"));
+  for (const relative of manifest.files) {
+    const source = path.join(packageRoot, ...relative.split("/"));
+    const destination = path.join(root, ...relative.split("/"));
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(source, destination);
+  }
+  return root;
+}
+
 test("current package layout is valid", async () => {
   assert.deepEqual(await validatePackage(packageRoot), []);
 });
 
 test("current monorepo ownership and support matrix are valid", async () => {
   assert.deepEqual(await validateArchitecture(packageRoot), []);
+});
+
+test("installed Skill exposes Agent-led private setup without optional route prerequisites", async () => {
+  const skill = await readFile(path.join(packageRoot, "skills", "codex-delegated-execution", "SKILL.md"), "utf8");
+  const setup = await readFile(path.join(
+    packageRoot,
+    "skills",
+    "codex-delegated-execution",
+    "references",
+    "agent-setup.md"
+  ), "utf8");
+  assert.match(skill, /references\/agent-setup\.md/u);
+  assert.match(skill, /credential-free envelope and\s+profile registry outside the target repository/u);
+  assert.match(setup, /readablePaths/u);
+  assert.match(setup, /allowedPaths/u);
+  assert.match(setup, /Route failure is fail-closed/u);
+  assert.match(setup, /Never substitute another provider, model, router,\s+Pi, OpenCode CLI, OpenCodex/u);
+});
+
+test("public package rejects Apache-2.0 license drift", async () => {
+  const root = await copyCurrentPublicPackage();
+  const packageManifestPath = path.join(root, "package.json");
+  const packageManifest = JSON.parse(await readFile(packageManifestPath, "utf8"));
+  packageManifest.license = "MIT";
+  await writeFile(packageManifestPath, `${JSON.stringify(packageManifest, null, 2)}\n`);
+  const pluginManifestPath = path.join(root, "plugin.json");
+  const pluginManifest = JSON.parse(await readFile(pluginManifestPath, "utf8"));
+  pluginManifest.license = "MIT";
+  await writeFile(pluginManifestPath, `${JSON.stringify(pluginManifest, null, 2)}\n`);
+  await writeFile(path.join(root, "LICENSE"), `${await readFile(path.join(root, "LICENSE"), "utf8")}altered\n`);
+  const errors = await validatePackage(root);
+  assert(errors.some((item) => item.includes("plugin.json license must be Apache-2.0")));
+  assert(errors.some((item) => item.includes("package.json license must be Apache-2.0")));
+  assert(errors.some((item) => item.includes("LICENSE bytes must exactly match")));
+  await rm(root, { recursive: true });
+});
+
+test("public package rejects bilingual onboarding and relative-link drift", async () => {
+  const root = await copyCurrentPublicPackage();
+  const englishPath = path.join(root, "README.md");
+  const english = (await readFile(englishPath, "utf8"))
+    .replace("[简体中文](README.zh-CN.md)", "简体中文")
+    .concat("\n[missing guide](docs/missing-guide.md)\n");
+  await writeFile(englishPath, english);
+  const chinesePath = path.join(root, "README.zh-CN.md");
+  await writeFile(
+    chinesePath,
+    (await readFile(chinesePath, "utf8")).replace("Apache License 2.0", "Apache license")
+  );
+  const errors = await validatePackage(root);
+  assert(errors.some((item) => item.includes("README.md must include \"[简体中文](README.zh-CN.md)\"")));
+  assert(errors.some((item) => item.includes("README.zh-CN.md must include \"Apache License 2.0\"")));
+  assert(errors.some((item) => item.includes("Broken or escaping relative Markdown link in README.md")));
+  await rm(root, { recursive: true });
+});
+
+test("public package rejects first-use readiness and lifecycle guidance drift", async () => {
+  const root = await copyCurrentPublicPackage();
+  const englishPath = path.join(root, "README.md");
+  await writeFile(
+    englishPath,
+    (await readFile(englishPath, "utf8"))
+      .replaceAll("codex exec --help", "executor help")
+      .replaceAll("No additional executor installation is required.", "No other worker setup is required.")
+      .replaceAll("not an independent cryptographic guarantee", "an immutable guarantee")
+  );
+  const quickStartPath = path.join(root, "docs", "agent-quickstart.md");
+  await writeFile(
+    quickStartPath,
+    (await readFile(quickStartPath, "utf8")).replaceAll("v0.1.0", "the latest branch")
+  );
+  const manualPath = path.join(root, "docs", "manual-configuration.md");
+  await writeFile(
+    manualPath,
+    (await readFile(manualPath, "utf8"))
+      .replace("## Uninstall", "## Remove locally")
+      .replace("## Glossary", "## Terms")
+  );
+  const errors = await validatePackage(root);
+  assert(errors.some((item) => item.includes("README.md must include \"codex exec --help\"")));
+  assert(errors.some((item) => item.includes("README.md must include \"No additional executor installation is required.\"")));
+  assert(errors.some((item) => item.includes("README.md must include \"not an independent cryptographic guarantee\"")));
+  assert(errors.some((item) => item.includes("docs/agent-quickstart.md must include \"v0.1.0\"")));
+  assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"## Uninstall\"")));
+  assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"## Glossary\"")));
+  await rm(root, { recursive: true });
+});
+
+test("public package rejects local diagnostic and private process leakage", async () => {
+  const root = await copyCurrentPublicPackage();
+  await writeFile(path.join(root, "docs", "local-doctor-output.md"), [
+    "# Local output",
+    `Executable: ${["", "Users", "example", "private-tools", "codex"].join("/")}`,
+    `${["PRIVATE", "NOTE"].join(" ")}: copied from acceptance evidence`,
+    ""
+  ].join("\n"));
+  const errors = await validatePackage(root);
+  assert(errors.some((item) => item.includes("Public file manifest mismatch")));
+  assert(errors.some((item) => item.includes("User-specific absolute path")));
+  await rm(root, { recursive: true });
 });
 
 test("architecture validation rejects Codex-to-Pi coupling", async () => {

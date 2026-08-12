@@ -32,6 +32,11 @@ redaction, context budgets and queue pressure, profile projection, concurrent
 state changes, archive symlinks, and correction-state validation. Third-party
 CI actions must remain pinned to reviewed full commit identifiers.
 
+The candidate `LICENSE` must contain the reviewed Apache License 2.0 text,
+`NOTICE` must retain the EchoPath Labs attribution, and `package.json`,
+`plugin.json`, both README language entries, and contribution guidance must use
+the exact SPDX identifier `Apache-2.0`. License drift is a release blocker.
+
 ## Manual GitHub Gates
 
 Before the first public preview:

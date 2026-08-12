@@ -11,6 +11,7 @@ function usage() {
   return [
     "Usage:",
     "  agent-delegation-kit support",
+    "  agent-delegation-kit doctor",
     "  agent-delegation-kit run-codex --envelope <file> --profiles <file> --state-root <dir> --host-instance <id>",
     "  agent-delegation-kit correct-codex --task-root <dir> --profiles <file> --prompt <file>",
     "  agent-delegation-kit decide-codex --task-root <dir> --profiles <file> --action <accept|reject|abandon> --actor <id> --archive-root <dir>",
@@ -22,7 +23,7 @@ function parseArgs(argv) {
   if (argv[0] === "run") {
     throw new Error(`The ambiguous 'run' command was removed before 0.1.0. Use 'run-pi' explicitly. ${usage()}`);
   }
-  if (!["support", "run-pi", "run-codex", "correct-codex", "decide-codex"].includes(argv[0])) throw new Error(usage());
+  if (!["support", "doctor", "run-pi", "run-codex", "correct-codex", "decide-codex"].includes(argv[0])) throw new Error(usage());
   const command = argv[0];
   const options = {};
   for (let index = 1; index < argv.length; index += 1) {
@@ -41,7 +42,7 @@ function parseArgs(argv) {
     else throw new Error(`Unknown or incomplete argument: ${key}. ${usage()}`);
     index += 1;
   }
-  if (command === "support" && argv.length !== 1) throw new Error(usage());
+  if (["support", "doctor"].includes(command) && argv.length !== 1) throw new Error(usage());
   if (command === "run-pi" && !options.envelope) throw new Error(usage());
   if (command === "run-codex" && (!options.envelope || !options.profiles || !options.stateRoot || !options.hostInstanceId)) throw new Error(usage());
   if (command === "correct-codex" && (!options.taskRoot || !options.profiles || !options.prompt)) throw new Error(usage());
@@ -149,17 +150,22 @@ async function runPi(options) {
   return runDelegation(envelope, { executorCommand: options.executor });
 }
 
-export async function runCli(argv, io = process) {
+export async function runCli(argv, io = process, runtime = {}) {
   try {
     const options = parseArgs(argv);
     let result;
     if (options.command === "support") result = await supportSummary();
+    else if (options.command === "doctor") {
+      const { runDoctor } = await import("./doctor.mjs");
+      result = await runDoctor(runtime.doctor);
+    }
     else if (options.command === "run-pi") result = await runPi(options);
     else if (options.command === "run-codex") result = await runCodex(options);
     else if (options.command === "correct-codex") result = await correctCodex(options);
     else result = await decideCodex(options);
     io.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    if (options.command === "run-pi") io.exitCode = result.status === "completed" || result.status === "blocked" ? 0 : 1;
+    if (options.command === "doctor") io.exitCode = result.state === "blocked" ? 1 : 0;
+    else if (options.command === "run-pi") io.exitCode = result.status === "completed" || result.status === "blocked" ? 0 : 1;
     else if (options.command === "run-codex" || options.command === "correct-codex") {
       io.exitCode = result.reviewPacket.lifecycleState === "failed" ? 1 : 0;
     } else if (options.command !== "support") io.exitCode = 0;

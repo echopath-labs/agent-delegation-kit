@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createGitRepository, makeEnvelope } from "./helpers.mjs";
+import { runDoctor } from "../packages/cli/src/doctor.mjs";
 
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -19,6 +20,145 @@ test("Skill-local wrapper exposes sanitized support metadata", async () => {
   assert.equal(support.routes[0].id, "codex-codex");
   assert.equal(support.routes[0].status, "public-preview");
   assert.equal(support.routes[1].status, "experimental");
+});
+
+function doctorRunner(scenario = {}) {
+  const calls = [];
+  const run = async (command, args, options) => {
+    calls.push({ command, args, options });
+    const key = `${command} ${args.join(" ")}`;
+    if (scenario.throwFor?.includes(key)) throw new Error("fixture unavailable at a private path");
+    if (scenario.results?.[key]) return scenario.results[key];
+    const outputs = {
+      "git --version": { stdout: "git version 2.50.0\n" },
+      "codex --version": { stdout: "codex-cli 0.147.0\n" },
+      "codex exec --help": { stdout: "Run Codex non-interactively\nUsage: codex exec [OPTIONS]\n" },
+      "codex plugin marketplace list --json": { stdout: JSON.stringify({ marketplaces: [{ name: "agent-delegation-kit-local" }] }) },
+      "codex plugin list --marketplace agent-delegation-kit-local --json": { stdout: JSON.stringify({ installed: [{ name: "agent-delegation-kit" }] }) }
+    };
+    return {
+      exitCode: 0,
+      stderr: "",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      timedOut: false,
+      ...(outputs[key] ?? { exitCode: 1, stdout: "" })
+    };
+  };
+  return { run, calls };
+}
+
+test("doctor reports a ready local Codex-to-Codex installation without optional routes", async () => {
+  const fixture = doctorRunner();
+  const result = await runDoctor({
+    runProcess: fixture.run,
+    environment: { PATH: "/fixture/bin", HTTPS_PROXY: "http://private.invalid", SECRET_TOKEN: "opaque" },
+    nodeVersion: "20.20.2"
+  });
+  assert.equal(result.state, "ready");
+  assert.equal(result.executor.command, "codex exec");
+  assert.equal(result.executor.additionalInstallationRequired, false);
+  assert.equal(result.checks.every((item) => item.status === "pass"), true);
+  assert.equal(fixture.calls.some((item) => /pi|opencode|provider/iu.test(`${item.command} ${item.args.join(" ")}`)), false);
+  assert.equal(fixture.calls.every((item) => item.options.env.HTTPS_PROXY === undefined && item.options.env.SECRET_TOKEN === undefined), true);
+});
+
+test("doctor distinguishes compatible runtime from missing plugin setup", async () => {
+  const fixture = doctorRunner({
+    results: {
+      "codex plugin marketplace list --json": {
+        exitCode: 0,
+        stdout: JSON.stringify({ marketplaces: [] }),
+        stderr: "",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        timedOut: false
+      }
+    }
+  });
+  const result = await runDoctor({ runProcess: fixture.run, nodeVersion: "22.1.0" });
+  assert.equal(result.state, "needs_setup");
+  assert.equal(result.checks.find((item) => item.id === "marketplace").remediation, "add-marketplace");
+  assert.equal(result.checks.find((item) => item.id === "plugin").status, "warn");
+});
+
+test("doctor accepts identities only from the documented listing collections", async () => {
+  for (const stdout of [
+    JSON.stringify({ unrelatedDiagnostic: "agent-delegation-kit-local" }),
+    JSON.stringify({ metadata: { name: "agent-delegation-kit-local" }, marketplaces: [] })
+  ]) {
+    const fixture = doctorRunner({ results: {
+      "codex plugin marketplace list --json": {
+        exitCode: 0,
+        stdout,
+        stderr: "",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        timedOut: false
+      }
+    } });
+    const result = await runDoctor({ runProcess: fixture.run, nodeVersion: "22.1.0" });
+    assert.equal(result.state, "needs_setup");
+    assert.equal(result.checks.find((item) => item.id === "marketplace").status, "warn");
+  }
+
+  const pluginFixture = doctorRunner({ results: {
+    "codex plugin list --marketplace agent-delegation-kit-local --json": {
+      exitCode: 0,
+      stdout: JSON.stringify({ diagnostic: "agent-delegation-kit", available: [{ name: "agent-delegation-kit" }], installed: [] }),
+      stderr: "",
+      stdoutTruncated: false,
+      stderrTruncated: false,
+      timedOut: false
+    }
+  } });
+  const pluginResult = await runDoctor({ runProcess: pluginFixture.run, nodeVersion: "22.1.0" });
+  assert.equal(pluginResult.state, "needs_setup");
+  assert.equal(pluginResult.checks.find((item) => item.id === "plugin").status, "warn");
+});
+
+test("doctor blocks missing and unsupported Codex without probing plugin state", async () => {
+  for (const scenario of [
+    { throwFor: ["codex --version"] },
+    { results: {
+      "codex --version": {
+        exitCode: 0,
+        stdout: "codex-cli 0.146.9\n",
+        stderr: "",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        timedOut: false
+      }
+    } }
+  ]) {
+    const fixture = doctorRunner(scenario);
+    const result = await runDoctor({ runProcess: fixture.run, nodeVersion: "20.20.2" });
+    assert.equal(result.state, "blocked");
+    assert.equal(result.checks.find((item) => item.id === "codex-cli").status, "fail");
+    assert.equal(fixture.calls.some((item) => item.args[0] === "plugin"), false);
+  }
+});
+
+test("doctor blocks unavailable codex exec and sanitizes malformed, timed-out, and truncated listing probes", async () => {
+  const unavailable = doctorRunner({ throwFor: ["codex exec --help"] });
+  const unavailableResult = await runDoctor({ runProcess: unavailable.run, nodeVersion: "20.20.2" });
+  assert.equal(unavailableResult.state, "blocked");
+  assert.equal(unavailableResult.checks.find((item) => item.id === "codex-exec").status, "fail");
+
+  for (const probe of [
+    { stdout: "not-json", timedOut: false, stdoutTruncated: false, stderrTruncated: false },
+    { stdout: ["", "Users", "private", "secret"].join("/"), timedOut: true, stdoutTruncated: false, stderrTruncated: false },
+    { stdout: "token=opaque", timedOut: false, stdoutTruncated: true, stderrTruncated: false }
+  ]) {
+    const fixture = doctorRunner({ results: {
+      "codex plugin marketplace list --json": { exitCode: 0, stderr: "Bearer opaque", ...probe }
+    } });
+    const result = await runDoctor({ runProcess: fixture.run, nodeVersion: "20.20.2" });
+    const serialized = JSON.stringify(result);
+    assert.equal(result.state, "needs_setup");
+    assert.equal(serialized.includes(["", "Users", "private"].join("/")), false);
+    assert.doesNotMatch(serialized, /Bearer opaque|token=opaque/u);
+  }
 });
 
 test("Skill-local wrapper completes fake Codex execution through pending review", async (context) => {
