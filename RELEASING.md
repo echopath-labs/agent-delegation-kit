@@ -10,7 +10,7 @@ From a clean candidate repository with Node.js 20 or later and Git:
 
 ```bash
 npm run check
-ADK_CODEX_PLUGIN_SMOKE=1 npm run smoke:codex-plugin
+RELAYPACT_CODEX_PLUGIN_SMOKE=1 npm run smoke:codex-plugin
 npm pack --dry-run --json
 ```
 
@@ -32,13 +32,18 @@ redaction, context budgets and queue pressure, profile projection, concurrent
 state changes, archive symlinks, and correction-state validation. Third-party
 CI actions must remain pinned to reviewed full commit identifiers.
 
+The candidate `LICENSE` must contain the reviewed Apache License 2.0 text,
+`NOTICE` must retain the EchoPath Labs attribution, and `package.json`,
+`plugin.json`, both README language entries, and contribution guidance must use
+the exact SPDX identifier `Apache-2.0`. License drift is a release blocker.
+
 ## Manual GitHub Gates
 
 Before the first public preview:
 
 - establish `main` as the default branch and preserve the reviewed candidate
   history;
-- configure the `echopath-labs/agent-delegation-kit` remote without embedding
+- configure the `echopath-labs/relaypact` remote without embedding
   credentials in its URL;
 - enable GitHub private vulnerability reporting and verify the link in
   [SECURITY.md](SECURITY.md);

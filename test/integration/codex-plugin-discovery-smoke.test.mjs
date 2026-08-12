@@ -9,11 +9,11 @@ import { execFile } from "node:child_process";
 import { MINIMUM_CODEX_VERSION, parseCodexVersion } from "../../packages/executor-codex/src/compatibility.mjs";
 
 const execFileAsync = promisify(execFile);
-const enabled = process.env.ADK_CODEX_PLUGIN_SMOKE === "1";
+const enabled = process.env.RELAYPACT_CODEX_PLUGIN_SMOKE === "1";
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 function containsPluginIdentity(value) {
-  if (value === "agent-delegation-kit" || (typeof value === "string" && value.startsWith("agent-delegation-kit@"))) return true;
+  if (value === "relaypact" || (typeof value === "string" && value.startsWith("relaypact@"))) return true;
   if (Array.isArray(value)) return value.some(containsPluginIdentity);
   if (value && typeof value === "object") return Object.values(value).some(containsPluginIdentity);
   return false;
@@ -55,9 +55,9 @@ async function runCodex(command, args, environment) {
 }
 
 test("opt-in supported Codex discovers the portable plugin and packaged skill", { skip: !enabled }, async (context) => {
-  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "adk-codex-plugin-smoke-"));
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-codex-plugin-smoke-"));
   const codexHome = path.join(temporaryRoot, "codex-home");
-  const command = process.env.ADK_CODEX_COMMAND ?? "codex";
+  const command = process.env.RELAYPACT_CODEX_COMMAND ?? "codex";
   const environment = { ...process.env, CODEX_HOME: codexHome };
   try {
     await mkdir(codexHome, { recursive: true, mode: 0o700 });
@@ -68,35 +68,39 @@ test("opt-in supported Codex discovers the portable plugin and packaged skill", 
     assert.ok(meetsMinimumVersion(version, MINIMUM_CODEX_VERSION), `Codex ${MINIMUM_CODEX_VERSION} or later is required.`);
 
     await runCodex(command, ["plugin", "marketplace", "add", packageRoot, "--json"], environment);
-    const available = JSON.parse((await runCodex(command, ["plugin", "list", "--marketplace", "agent-delegation-kit-local", "--available", "--json"], environment)).stdout);
+    const available = JSON.parse((await runCodex(command, ["plugin", "list", "--marketplace", "relaypact-local", "--available", "--json"], environment)).stdout);
     assert.equal(containsPluginIdentity(available), true, "Codex did not list the portable plugin from the isolated marketplace.");
 
-    const installed = JSON.parse((await runCodex(command, ["plugin", "add", "agent-delegation-kit@agent-delegation-kit-local", "--json"], environment)).stdout);
+    const installed = JSON.parse((await runCodex(command, ["plugin", "add", "relaypact@relaypact-local", "--json"], environment)).stdout);
     assert.equal(containsPluginIdentity(installed), true, "Codex did not report installing the portable plugin.");
-    const listed = JSON.parse((await runCodex(command, ["plugin", "list", "--marketplace", "agent-delegation-kit-local", "--json"], environment)).stdout);
+    const listed = JSON.parse((await runCodex(command, ["plugin", "list", "--marketplace", "relaypact-local", "--json"], environment)).stdout);
     assert.equal(containsPluginIdentity(listed), true, "Codex did not list the installed portable plugin.");
 
     const manifests = await findNamedFiles(codexHome, "plugin.json");
     const matchingManifest = (await Promise.all(manifests.map(async (file) => {
       try {
-        return JSON.parse(await readFile(file, "utf8")).name === "agent-delegation-kit" ? file : null;
+        return JSON.parse(await readFile(file, "utf8")).name === "relaypact" ? file : null;
       } catch {
         return null;
       }
     }))).find(Boolean);
     assert.ok(matchingManifest, "Installed plugin cache does not contain the expected root plugin.json.");
     const skills = await findNamedFiles(path.dirname(matchingManifest), "SKILL.md");
-    const skill = skills.find((file) => file.endsWith(path.join("skills", "codex-delegated-execution", "SKILL.md")));
+    const skill = skills.find((file) => file.endsWith(path.join("skills", "relaypact", "SKILL.md")));
     assert.ok(skill, "Installed plugin cache does not contain the expected delegated-execution skill.");
-    const wrapper = path.join(path.dirname(skill), "scripts", "agent-delegation-kit.mjs");
+    const wrapper = path.join(path.dirname(skill), "scripts", "relaypact.mjs");
     const wrapperSupport = JSON.parse((await runCodex(process.execPath, [wrapper, "support"], environment)).stdout);
     assert.equal(wrapperSupport.routes[0].id, "codex-codex", "Installed Skill-local wrapper did not resolve the packaged CLI.");
     assert.equal(wrapperSupport.routes[0].status, "public-preview");
+    const wrapperDoctor = JSON.parse((await runCodex(process.execPath, [wrapper, "doctor"], environment)).stdout);
+    assert.equal(wrapperDoctor.state, "ready", "Installed Skill-local doctor did not verify the isolated plugin.");
+    assert.equal(wrapperDoctor.executor.command, "codex exec");
+    assert.equal(wrapperDoctor.executor.additionalInstallationRequired, false);
     context.diagnostic(JSON.stringify({
       codexVersion: version,
-      marketplace: "agent-delegation-kit-local",
-      plugin: "agent-delegation-kit",
-      expectedSkill: "codex-delegated-execution",
+      marketplace: "relaypact-local",
+      plugin: "relaypact",
+      expectedSkill: "relaypact",
       isolatedHome: true
     }));
   } finally {

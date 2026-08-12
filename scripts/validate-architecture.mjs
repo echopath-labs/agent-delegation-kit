@@ -4,18 +4,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const EXPECTED_PACKAGES = new Map([
-  ["adapter-codex-codex", "@agent-delegation-kit/adapter-codex-codex"],
-  ["adapter-codex-pi", "@agent-delegation-kit/adapter-codex-pi"],
-  ["cli", "@agent-delegation-kit/cli"],
-  ["contracts", "@agent-delegation-kit/contracts"],
-  ["core", "@agent-delegation-kit/core"],
-  ["executor-codex", "@agent-delegation-kit/executor-codex"],
-  ["executor-pi", "@agent-delegation-kit/executor-pi"],
-  ["host-codex", "@agent-delegation-kit/host-codex"]
+  ["adapter-codex-codex", "@relaypact/adapter-codex-codex"],
+  ["adapter-codex-pi", "@relaypact/adapter-codex-pi"],
+  ["cli", "@relaypact/cli"],
+  ["contracts", "@relaypact/contracts"],
+  ["core", "@relaypact/core"],
+  ["executor-codex", "@relaypact/executor-codex"],
+  ["executor-pi", "@relaypact/executor-pi"],
+  ["host-codex", "@relaypact/host-codex"]
 ]);
 
 const SUPPORT_MATRIX_SCHEMA = "./packages/contracts/schemas/adapter-support-matrix.schema.json";
-const CONTRACT_SCHEMA_BASE = "https://raw.githubusercontent.com/echopath-labs/agent-delegation-kit/main/packages/contracts/schemas";
+const CONTRACT_SCHEMA_BASE = "https://raw.githubusercontent.com/echopath-labs/relaypact/main/packages/contracts/schemas";
 const CONTRACT_SCHEMAS = [
   "adapter-support-matrix.schema.json",
   "codex-worker-result.schema.json",

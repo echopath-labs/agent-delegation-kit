@@ -1,5 +1,5 @@
 {
-  "name": "@agent-delegation-kit/adapter-codex-codex",
+  "name": "@relaypact/adapter-codex-codex",
   "version": "0.1.0",
   "private": true,
   "type": "module",

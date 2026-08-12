@@ -225,7 +225,7 @@ export function validateTaskEnvelope(input) {
     ...(input.contextPlanning?.seeds ?? [])
   ];
   if (authorityPaths.some(isReservedPath)) {
-    throw new DelegationError("invalid_envelope", "Reserved .git and .agent-delegation paths cannot be granted as task authority.");
+    throw new DelegationError("invalid_envelope", "Reserved .git and .relaypact paths cannot be granted as task authority.");
   }
   if (scope.discoverablePaths !== undefined) requireNormalizedPathArray(scope.discoverablePaths, "scope.discoverablePaths");
 

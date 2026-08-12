@@ -35,7 +35,7 @@ async function runValidations(commands, workingDirectory, options = {}) {
     ...Object.values(options.validationEnv ?? {})
   ].filter((value) => typeof value === "string" && value.length > 0))];
   const isolated = await createIsolatedEnvironment(options.validationEnvironment ?? process.env, {
-    prefix: "adk-validation-",
+    prefix: "relaypact-validation-",
     grants: options.validationEnv ?? {}
   });
   try {

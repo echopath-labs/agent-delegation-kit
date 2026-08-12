@@ -1,5 +1,5 @@
 {
-  "name": "@agent-delegation-kit/contracts",
+  "name": "@relaypact/contracts",
   "version": "0.1.0",
   "private": true,
   "type": "module",

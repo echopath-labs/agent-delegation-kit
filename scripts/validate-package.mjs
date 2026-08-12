@@ -5,13 +5,30 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CANONICAL_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+const PROJECT_NAME = "relaypact";
+const PROJECT_DISPLAY_NAME = "RelayPact";
+const PROJECT_LICENSE = "Apache-2.0";
+const PROJECT_REPOSITORY = "https://github.com/echopath-labs/relaypact";
+const PROJECT_MARKETPLACE = "relaypact-local";
+const PROJECT_SKILL = "relaypact";
+const REVIEWED_LICENSE_SHA256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30";
+const REVIEWED_NOTICE_SHA256 = "5b11b2690e855e2c91fd96648a5e3772a2d433c094616ac4397a0b6106f76dd2";
+const FORMER_IDENTITY_VALUES = [
+  ["agent", "delegation", "kit"].join("-"),
+  ["agent", "delegation", "kit"].join("_"),
+  ["agent", "delegation", "kit"].join(" "),
+  ["codex", "delegated", "execution"].join("-"),
+  ["a", "d", "k", "_"].join(""),
+  ["a", "d", "k", "-"].join(""),
+  `.${["agent", "delegation"].join("-")}`
+];
 const MANIFEST_FIELDS = new Set([
   "$schema", "name", "version", "description", "author", "homepage",
   "repository", "license", "keywords", "extensions"
 ]);
 const ALLOWED_TOP_LEVEL = new Set([
   ".agents", ".git", ".github", ".gitignore", ".npmignore", "CHANGELOG.md",
-  "AGENTS.md", "CONTRIBUTING.md", "LICENSE", "README.md", "RELEASING.md", "SECURITY.md",
+  "AGENTS.md", "CONTRIBUTING.md", "LICENSE", "NOTICE", "README.md", "README.zh-CN.md", "RELEASING.md", "SECURITY.md",
   "plugin.json", "package.json", "skills", "packages", "bin", "scripts",
   "test", "examples", "docs", "public-files.json", "support-matrix.json"
 ]);
@@ -25,8 +42,17 @@ const REVIEWED_WORKFLOW_SHA256 = "6ef860d3bf95bf059a1dcc5e9569cdc46fb277411ef7be
 const REQUIRED_PREVIEW_FILES = [
   "AGENTS.md",
   "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  "LICENSE",
+  "NOTICE",
+  "README.md",
+  "README.zh-CN.md",
   "RELEASING.md",
   "SECURITY.md",
+  "docs/agent-quickstart.md",
+  "docs/agent-quickstart.zh-CN.md",
+  "docs/manual-configuration.md",
+  "skills/relaypact/references/agent-setup.md",
   ".github/workflows/validate.yml"
 ];
 
@@ -56,6 +82,11 @@ function validateManifest(manifest, errors) {
     return;
   }
   if (manifest.$schema !== CANONICAL_SCHEMA) errors.push("plugin.json must target Agent Plugins 1.0.0.");
+  if (manifest.name !== PROJECT_NAME) errors.push(`plugin.json name must remain ${PROJECT_NAME}.`);
+  if (manifest.homepage !== PROJECT_REPOSITORY || manifest.repository !== PROJECT_REPOSITORY) {
+    errors.push(`plugin.json repository identities must remain ${PROJECT_REPOSITORY}.`);
+  }
+  if (manifest.license !== PROJECT_LICENSE) errors.push(`plugin.json license must be ${PROJECT_LICENSE}.`);
   if (typeof manifest.name !== "string" || !/^[a-z0-9](?!.*(?:--|\.\.))[a-z0-9.-]{0,62}[a-z0-9]$|^[a-z0-9]$/.test(manifest.name)) {
     errors.push("plugin.json name is invalid.");
   }
@@ -64,6 +95,152 @@ function validateManifest(manifest, errors) {
   if (manifest.author !== undefined) {
     if (!manifest.author || typeof manifest.author !== "object" || Array.isArray(manifest.author)) errors.push("plugin.json author must be an object.");
     else if (Object.keys(manifest.author).some((key) => !["name", "email", "url"].includes(key))) errors.push("plugin.json author has unknown fields.");
+  }
+}
+
+function sha256(content) {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+async function readRequiredText(root, relative, errors) {
+  try {
+    return await readFile(path.join(root, ...relative.split("/")), "utf8");
+  } catch {
+    errors.push(`${relative} is required for public onboarding.`);
+    return null;
+  }
+}
+
+function requireText(text, fragments, relative, errors) {
+  if (text === null) return;
+  for (const fragment of fragments) {
+    if (!text.includes(fragment)) errors.push(`${relative} must include ${JSON.stringify(fragment)}.`);
+  }
+}
+
+async function validateProjectOnboarding(root, errors) {
+  const files = Object.fromEntries(await Promise.all([
+    "README.md",
+    "README.zh-CN.md",
+    "docs/agent-quickstart.md",
+    "docs/agent-quickstart.zh-CN.md",
+    "docs/manual-configuration.md",
+    "skills/relaypact/SKILL.md",
+    "skills/relaypact/references/agent-setup.md",
+    "CONTRIBUTING.md",
+    "RELEASING.md",
+    "LICENSE",
+    "NOTICE"
+  ].map(async (relative) => [relative, await readRequiredText(root, relative, errors)])));
+
+  const sharedReadmeFacts = [
+    PROJECT_DISPLAY_NAME, PROJECT_REPOSITORY, PROJECT_MARKETPLACE,
+    "0.1.0", "codex-codex", "public-preview", "Codex CLI 0.147.0",
+    "Node.js 20", "Apache License 2.0", "SECURITY.md",
+    "docs/manual-configuration.md", "codex exec --help", "v0.1.0",
+    "doctor"
+  ];
+  requireText(files["README.md"], [
+    ...sharedReadmeFacts,
+    "[简体中文](README.zh-CN.md)",
+    "docs/agent-quickstart.md",
+    "$relaypact",
+    "NOTICE",
+    "No additional executor installation is required.",
+    "not an independent cryptographic guarantee"
+  ], "README.md", errors);
+  requireText(files["README.zh-CN.md"], [
+    ...sharedReadmeFacts,
+    "[English](README.md)",
+    "docs/agent-quickstart.zh-CN.md",
+    "$relaypact",
+    "NOTICE",
+    "不需要额外安装 executor。",
+    "不是独立的密码学保证"
+  ], "README.zh-CN.md", errors);
+
+  for (const relative of ["docs/agent-quickstart.md", "docs/agent-quickstart.zh-CN.md"]) {
+    requireText(files[relative], [
+      "$relaypact",
+      "manual-configuration.md",
+      "opencode-go-luna.md",
+      "accept",
+      "reject",
+      "abandon",
+      "Apache License 2.0",
+      "codex exec",
+      "doctor",
+      "v0.1.0",
+      "patch",
+      "commit SHA"
+    ], relative, errors);
+  }
+  requireText(files["docs/agent-quickstart.md"], [
+    "[简体中文](agent-quickstart.zh-CN.md)",
+    "quota or cost"
+  ], "docs/agent-quickstart.md", errors);
+  requireText(files["docs/agent-quickstart.zh-CN.md"], [
+    "[English](agent-quickstart.md)",
+    "额度或费用"
+  ], "docs/agent-quickstart.zh-CN.md", errors);
+
+  requireText(files["skills/relaypact/SKILL.md"], [
+    `name: ${PROJECT_SKILL}`, "# RelayPact", "references/agent-setup.md", "support", "doctor", "codex exec", "credential-free", "private",
+    "Do not substitute", "Acceptance archives evidence"
+  ], "skills/relaypact/SKILL.md", errors);
+  requireText(files["skills/relaypact/references/agent-setup.md"], [
+    "support", "doctor", "codex exec", "readablePaths", "allowedPaths", "credential-free",
+    "private", "fail-closed", "accept", "reject", "abandon"
+  ], "skills/relaypact/references/agent-setup.md", errors);
+
+  requireText(files["docs/manual-configuration.md"], [
+    "v0.1.0", "doctor", "needs_setup", "codex exec --help",
+    "Apply an accepted candidate separately", "Upgrade a release installation",
+    "## Uninstall", "private archives", "additional tokens", "## Glossary",
+    "not an independent cryptographic guarantee", "separate trusted channel"
+  ], "docs/manual-configuration.md", errors);
+
+  requireText(files["CONTRIBUTING.md"], [PROJECT_LICENSE, "Section 5"], "CONTRIBUTING.md", errors);
+  requireText(files["RELEASING.md"], [PROJECT_LICENSE, "NOTICE"], "RELEASING.md", errors);
+  if (files.LICENSE !== null && sha256(files.LICENSE) !== REVIEWED_LICENSE_SHA256) {
+    errors.push("LICENSE bytes must exactly match the reviewed Apache License 2.0 text.");
+  }
+  if (files.NOTICE !== null && sha256(files.NOTICE) !== REVIEWED_NOTICE_SHA256) {
+    errors.push("NOTICE bytes must exactly match the reviewed EchoPath Labs attribution.");
+  }
+
+  try {
+    const packageManifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+    if (packageManifest.name !== PROJECT_NAME) errors.push(`package.json name must be ${PROJECT_NAME}.`);
+    if (packageManifest.license !== PROJECT_LICENSE) errors.push(`package.json license must be ${PROJECT_LICENSE}.`);
+    if (packageManifest.bin?.[PROJECT_NAME] !== "./bin/relaypact.mjs" || Object.keys(packageManifest.bin ?? {}).length !== 1) {
+      errors.push("package.json must expose only the canonical relaypact CLI binary.");
+    }
+  } catch (error) {
+    errors.push(`package.json is missing or invalid JSON: ${error.message}`);
+  }
+}
+
+async function validateMarkdownLinks(root, entries, errors) {
+  for (const item of entries.filter((entry) => entry.entry.isFile() && entry.relative.endsWith(".md"))) {
+    const text = await readFile(item.absolute, "utf8");
+    for (const match of text.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/gu)) {
+      let reference = match[1].trim().replace(/^<|>$/gu, "");
+      if (/^(?:https?:|mailto:|#)/iu.test(reference)) continue;
+      reference = reference.split("#", 1)[0].split("?", 1)[0];
+      if (reference.length === 0) continue;
+      try {
+        reference = decodeURIComponent(reference);
+      } catch {
+        errors.push(`Malformed relative Markdown link in ${item.relative}: ${match[1]}.`);
+        continue;
+      }
+      const target = path.resolve(path.dirname(item.absolute), reference);
+      const relativeTarget = path.relative(root, target);
+      if (relativeTarget.startsWith("..") || path.isAbsolute(relativeTarget) || !(await pathExists(target))) {
+        errors.push(`Broken or escaping relative Markdown link in ${item.relative}: ${match[1]}.`);
+      }
+    }
   }
 }
 
@@ -141,14 +318,18 @@ export async function validatePackage(root) {
     errors.push(`public-files.json is missing or invalid: ${error.message}`);
   }
   await validatePreviewFiles(resolvedRoot, errors);
+  await validateProjectOnboarding(resolvedRoot, errors);
 
   try {
     const marketplace = JSON.parse(await readFile(path.join(resolvedRoot, ".agents", "plugins", "marketplace.json"), "utf8"));
     const entry = Array.isArray(marketplace.plugins)
       ? marketplace.plugins.find((item) => item?.name === manifest?.name)
       : null;
-    if (typeof marketplace.name !== "string" || marketplace.name.length === 0) {
-      errors.push("Local marketplace name is missing or invalid.");
+    if (marketplace.name !== PROJECT_MARKETPLACE) {
+      errors.push(`Local marketplace name must remain ${PROJECT_MARKETPLACE}.`);
+    }
+    if (marketplace.interface?.displayName !== PROJECT_DISPLAY_NAME) {
+      errors.push(`Local marketplace display name must remain ${PROJECT_DISPLAY_NAME}.`);
     }
     if (!entry || entry.source?.source !== "local" || entry.source?.path !== ".") {
       errors.push("Local marketplace must expose the root plugin by its manifest name.");
@@ -158,6 +339,19 @@ export async function validatePackage(root) {
   }
 
   const entries = await walk(resolvedRoot);
+  await validateMarkdownLinks(resolvedRoot, entries, errors);
+  for (const item of entries) {
+    const normalizedPath = item.relative.toLowerCase();
+    if (FORMER_IDENTITY_VALUES.some((value) => normalizedPath.includes(value))) {
+      errors.push(`Former public identity is not allowed in path ${item.relative}.`);
+    }
+    if (item.entry.isFile() && /\.(?:md|json|mjs|js|txt|ya?ml)$/iu.test(item.relative)) {
+      const text = (await readFile(item.absolute, "utf8")).toLowerCase();
+      if (FORMER_IDENTITY_VALUES.some((value) => text.includes(value))) {
+        errors.push(`Former public identity is not allowed in ${item.relative}.`);
+      }
+    }
+  }
   if (publicFiles) {
     const actualFiles = entries
       .filter((item) => item.entry.isFile())
@@ -191,12 +385,13 @@ export async function validatePackage(root) {
     for (const skill of skills) {
       const skillFile = path.join(skillsRoot, skill.name, "SKILL.md");
       if (!(await pathExists(skillFile))) errors.push(`skills/${skill.name}/SKILL.md is missing.`);
-      if (skill.name === "codex-delegated-execution") {
-        const wrapper = path.join(skillsRoot, skill.name, "scripts", "agent-delegation-kit.mjs");
+      if (skill.name === PROJECT_SKILL) {
+        const wrapper = path.join(skillsRoot, skill.name, "scripts", "relaypact.mjs");
         if (!(await pathExists(wrapper))) errors.push("The Codex delegation Skill-local wrapper is missing.");
         else if (((await stat(wrapper)).mode & 0o111) === 0) errors.push("The Codex delegation Skill-local wrapper must be executable.");
       }
     }
+    if (!skills.some((skill) => skill.name === PROJECT_SKILL)) errors.push("The canonical RelayPact Skill is missing.");
   }
 
   for (const item of entries) {

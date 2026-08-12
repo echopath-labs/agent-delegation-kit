@@ -25,7 +25,7 @@ const profile = { name: "worker", external: true };
 async function setup(overrides = {}) {
   const root = await createGitRepository();
   const repository = await resolveRepository({ root, workingDirectory: "." });
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-state-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-state-"));
   const envelope = makeEnvelope(root, {
     scope: { readablePaths: ["README.md"] },
     executionProfile: "worker",
@@ -40,7 +40,7 @@ test("sanitized capsule copies only declared readable files and preserves source
   assert.equal(capsule.mode, "sanitized");
   assert.equal(await readFile(path.join(capsule.capsuleRoot, "README.md"), "utf8"), "# Fixture\n");
   const executorEnvelope = JSON.parse(await readFile(
-    path.join(capsule.capsuleRoot, ".agent-delegation", "task-envelope.json"),
+    path.join(capsule.capsuleRoot, ".relaypact", "task-envelope.json"),
     "utf8"
   ));
   const canonicalEnvelope = JSON.parse(await readFile(capsule.envelopePath, "utf8"));
@@ -55,7 +55,7 @@ test("sanitized capsule copies only declared readable files and preserves source
   assert.equal(JSON.stringify(executorEnvelope).includes(fixture.root), false);
   assert.equal(canonicalEnvelope.repository.root, fixture.root);
   assert.equal(validateTaskEnvelope(executorEnvelope), executorEnvelope);
-  await access(path.join(capsule.capsuleRoot, ".agent-delegation", "codex-worker-result.schema.json"));
+  await access(path.join(capsule.capsuleRoot, ".relaypact", "codex-worker-result.schema.json"));
   assert.equal((await verifySourceUnchanged(fixture.repository, capsule)).unchanged, true);
 });
 
@@ -105,7 +105,7 @@ test("planned capsule copies the deterministic closure and persists one manifest
   ]);
   const privateManifest = JSON.parse(await readFile(capsule.contextManifestPath, "utf8"));
   const visibleManifest = JSON.parse(await readFile(
-    path.join(capsule.capsuleRoot, ".agent-delegation", "context-manifest.json"),
+    path.join(capsule.capsuleRoot, ".relaypact", "context-manifest.json"),
     "utf8"
   ));
   assert.equal(privateManifest.fingerprint, capsule.contextManifestFingerprint);
@@ -213,7 +213,7 @@ test("candidate evidence omits a patch containing an exact granted credential", 
   const root = await createGitRepository();
   const envelope = makeEnvelope(root, { scope: { allowedPaths: ["allowed.txt"], readablePaths: ["README.md"] } });
   const repository = await resolveRepository({ root, workingDirectory: "." });
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-capsule-state-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-capsule-state-"));
   const capsule = await prepareCapsule({ envelope, repository, profile, stateRoot, workerResultSchemaPath });
   const secret = "exact-provider-credential-for-evidence";
   await writeFile(path.join(capsule.capsuleRoot, "allowed.txt"), `leaked ${secret}\n`);

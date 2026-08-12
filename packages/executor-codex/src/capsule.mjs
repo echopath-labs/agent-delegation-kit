@@ -25,7 +25,7 @@ import { evaluatePathScope, globToRegExp, normalizeRelativePath } from "../../co
 import { runProcess } from "../../core/src/process.mjs";
 import { containsExactSensitiveValue } from "../../core/src/redact.mjs";
 
-const PRIVATE_SEGMENTS = new Set([".git", ".agent-delegation", ".pi", ".codex", ".ssh", "node_modules"]);
+const PRIVATE_SEGMENTS = new Set([".git", ".relaypact", ".pi", ".codex", ".ssh", "node_modules"]);
 const PRIVATE_FILES = /^(?:\.env(?:\..*)?|auth\.json|credentials?(?:\..*)?|secrets?(?:\..*)?)$/i;
 const GLOB_CHARACTER = /[*?[\]]/;
 const MAX_CONTEXT_FILE_BYTES = 16 * 1024 * 1024;
@@ -57,8 +57,8 @@ export const IMMUTABLE_PRIVATE_CONTROL_PATHS = [
   "control/git/commondir"
 ];
 const EXECUTOR_CAPSULE_ROOT = process.platform === "win32"
-  ? "C:\\agent-delegation\\capsule"
-  : "/agent-delegation/capsule";
+  ? "C:\\relaypact\\capsule"
+  : "/relaypact/capsule";
 
 async function updateFileHash(hash, absolute, before) {
   await new Promise((resolve, reject) => {
@@ -348,7 +348,7 @@ export function projectExecutorEnvelope(envelope, sourceRoot) {
 }
 
 async function copyCapsuleControls(capsuleRoot, control, envelope, sourceRoot) {
-  const destinationRoot = path.join(capsuleRoot, ".agent-delegation");
+  const destinationRoot = path.join(capsuleRoot, ".relaypact");
   await mkdir(destinationRoot, { recursive: true, mode: 0o700 });
   const envelopeDestination = path.join(destinationRoot, "task-envelope.json");
   const schemaDestination = path.join(destinationRoot, "codex-worker-result.schema.json");
@@ -404,8 +404,8 @@ async function prepareSanitized(preflight, taskRoot, control, envelope, sourceRo
     GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z"
   };
   await checkedGit([
-    "-c", "user.name=Agent Delegation Kit",
-    "-c", "user.email=agent-delegation-kit@example.invalid",
+    "-c", "user.name=RelayPact",
+    "-c", "user.email=relaypact@example.invalid",
     "commit", "--allow-empty", "-m", "delegation: capsule baseline"
   ], capsuleRoot, { env: deterministicGitEnv, gitControl });
   const baseline = (await checkedGit(["rev-parse", "HEAD"], capsuleRoot, { gitControl })).stdout.trim();
@@ -425,7 +425,7 @@ async function prepareTrusted(preflight, repository, taskRoot) {
 export async function prepareCapsule(options) {
   const preflight = await preflightCapsule(options);
   await mkdir(preflight.stateRoot, { recursive: true, mode: 0o700 });
-  const taskRoot = path.join(preflight.stateRoot, `adk-${safeTaskName(options.envelope.taskId)}-${randomUUID()}`);
+  const taskRoot = path.join(preflight.stateRoot, `relaypact-${safeTaskName(options.envelope.taskId)}-${randomUUID()}`);
   await mkdir(taskRoot, { mode: 0o700 });
   const taskRootInfo = await lstat(taskRoot);
   const control = await writeControlFiles(taskRoot, options.envelope, preflight.schemaPath, preflight.contextManifest);
@@ -562,7 +562,7 @@ export async function verifyContextManifestIdentity(capsule, expectedFingerprint
     throw new DelegationError("context_manifest_missing", "Private context manifest is unavailable.");
   }
   const visiblePath = capsule.executorContextManifestPath
-    ?? path.join(capsule.capsuleRoot, ".agent-delegation", "context-manifest.json");
+    ?? path.join(capsule.capsuleRoot, ".relaypact", "context-manifest.json");
   const [privateManifest, visibleManifest] = await Promise.all([
     readContextManifestFile(capsule.contextManifestPath),
     readContextManifestFile(visiblePath)

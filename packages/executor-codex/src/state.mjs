@@ -39,7 +39,7 @@ function canonicalize(value) {
 }
 
 function integrityRoot(statePath) {
-  return path.join(path.dirname(path.dirname(statePath)), ".agent-delegation-integrity");
+  return path.join(path.dirname(path.dirname(statePath)), ".relaypact-integrity");
 }
 
 function integrityKeyPath(statePath) {

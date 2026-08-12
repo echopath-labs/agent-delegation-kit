@@ -340,7 +340,7 @@ function promptFor(envelope, correction) {
     "You are the delegated executor, not the coordinating host. Do not accept, integrate, commit, push, tag, publish, or deploy this work.",
     "First inspect the declared capsule context, use available tools to perform the engineering task, and run useful checks. The structured JSON is the final report, not a substitute for doing the task.",
     "The executor-visible task envelope uses a stable virtual repository root for deterministic, privacy-safe identity. Your actual current working directory is the capsule; resolve task paths relative to it.",
-    "When .agent-delegation/context-manifest.json is present, use it only to understand selected context and provenance; never edit task controls under .agent-delegation.",
+    "When .relaypact/context-manifest.json is present, use it only to understand selected context and provenance; never edit task controls under .relaypact.",
     "Do not report completed unless the expected outcome is actually present in the capsule. If required context or tool execution is unavailable, report blocked with non-empty blocking.code and blocking.message.",
     "When concrete missing task context is the blocker, use blocking.code context_gap and identify only the missing repository-relative dependency or information in blocking.message; do not request self-expansion.",
     "Return only the structured result required by the supplied output schema. Execution completion remains pending host review.",

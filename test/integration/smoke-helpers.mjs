@@ -9,8 +9,8 @@ import { createGitRepository, makeEnvelope } from "../helpers.mjs";
 
 export async function runRealCodexSmoke(profile, diagnostic, scenario = {}) {
   const root = await createGitRepository();
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-real-smoke-state-"));
-  const archiveRoot = await mkdtemp(path.join(os.tmpdir(), "adk-real-smoke-archive-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-real-smoke-state-"));
+  const archiveRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-real-smoke-archive-"));
   const outputFile = scenario.outputFile ?? "allowed.txt";
   const outputContent = scenario.outputContent ?? "delegated smoke ok\n";
   const envelope = makeEnvelope(root, {

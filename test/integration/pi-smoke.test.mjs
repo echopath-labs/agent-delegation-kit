@@ -5,16 +5,16 @@ import test from "node:test";
 import { runDelegation } from "../../packages/adapter-codex-pi/src/run-delegation.mjs";
 import { createGitRepository, makeEnvelope } from "../helpers.mjs";
 
-const enabled = process.env.ADK_PI_SMOKE === "1";
+const enabled = process.env.RELAYPACT_PI_SMOKE === "1";
 
 test("opt-in real Pi delegated execution", { skip: !enabled }, async (context) => {
   const root = await createGitRepository();
   const outputFile = "allowed.txt";
   const outputContent = "delegated Pi smoke ok\n";
   const profile = {};
-  if (process.env.ADK_PI_PROVIDER) profile.provider = process.env.ADK_PI_PROVIDER;
-  if (process.env.ADK_PI_MODEL) profile.model = process.env.ADK_PI_MODEL;
-  if (process.env.ADK_PI_REASONING) profile.reasoning = process.env.ADK_PI_REASONING;
+  if (process.env.RELAYPACT_PI_PROVIDER) profile.provider = process.env.RELAYPACT_PI_PROVIDER;
+  if (process.env.RELAYPACT_PI_MODEL) profile.model = process.env.RELAYPACT_PI_MODEL;
+  if (process.env.RELAYPACT_PI_REASONING) profile.reasoning = process.env.RELAYPACT_PI_REASONING;
   const overrides = {
     taskId: "real-pi-smoke",
     objective: `Create ${outputFile} with the exact requested content.`,
@@ -42,7 +42,7 @@ test("opt-in real Pi delegated execution", { skip: !enabled }, async (context) =
 
   try {
     const result = await runDelegation(makeEnvelope(root, overrides), {
-      executorCommand: process.env.ADK_PI_COMMAND ?? "pi"
+      executorCommand: process.env.RELAYPACT_PI_COMMAND ?? "pi"
     });
     context.diagnostic(JSON.stringify({
       status: result.status,

@@ -171,7 +171,7 @@ test("Pi and host validation receive isolated environments", async () => {
     executionProfile: { provider: "fixture-provider", model: "fixture-model" },
     validation: [{
       id: "environment",
-      argv: [process.execPath, "-e", "process.exit(process.env.HOST_SECRET===undefined&&process.env.HOME.includes('adk-validation-')?0:9)"],
+      argv: [process.execPath, "-e", "process.exit(process.env.HOST_SECRET===undefined&&process.env.HOME.includes('relaypact-validation-')?0:9)"],
       timeoutMs: 10_000
     }]
   });

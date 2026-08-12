@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/echopath-labs/agent-delegation-kit/main/packages/contracts/schemas/adapter-support-matrix.schema.json",
-  "title": "Agent Delegation Kit adapter support matrix",
+  "$id": "https://raw.githubusercontent.com/echopath-labs/relaypact/main/packages/contracts/schemas/adapter-support-matrix.schema.json",
+  "title": "RelayPact adapter support matrix",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "routes"],

@@ -1,12 +1,12 @@
 # OpenCode Go / GPT-5.6 Luna
 
-This guide configures Agent Delegation Kit so a coordinating Codex instance can
+This guide configures RelayPact so a coordinating Codex instance can
 delegate bounded work to an independent `codex exec` process that keeps the
 Codex harness while using OpenCode Go and GPT-5.6 Luna for inference.
 
 ```text
 Codex Desktop or another Codex host
-  -> Agent Delegation Kit
+  -> RelayPact
   -> independent codex exec
   -> OpenCode Go Responses API
   -> GPT-5.6 Luna
@@ -20,7 +20,7 @@ an optional provider integration, not a package dependency or fallback route.
 
 This integration was last checked on 2026-08-10 with:
 
-- Agent Delegation Kit `0.1.0` Public Preview candidate;
+- RelayPact `0.1.0` Public Preview candidate;
 - Codex CLI 0.147.0;
 - Node.js 20;
 - OpenCode Go model ID `gpt-5.6-luna`;
@@ -50,7 +50,7 @@ Never put an API key in:
 - a worker profile;
 - a committed shell script;
 - a prompt, validation argument, or example;
-- an Agent Delegation Kit review artifact.
+- a RelayPact review artifact.
 
 Load the key into the coordinating host environment using your normal secret
 manager or an interactive shell. The environment variable name used by this
@@ -62,11 +62,11 @@ Clone the public repository and keep its absolute location available as the
 package root:
 
 ```bash
-ADK_ROOT=/absolute/path/to/agent-delegation-kit
-cd "$ADK_ROOT"
+RELAYPACT_ROOT=/absolute/path/to/relaypact
+cd "$RELAYPACT_ROOT"
 npm run check
-codex plugin marketplace add "$ADK_ROOT" --json
-codex plugin add agent-delegation-kit@agent-delegation-kit-local --json
+codex plugin marketplace add "$RELAYPACT_ROOT" --json
+codex plugin add relaypact@relaypact-local --json
 ```
 
 Codex CLI 0.147.0 or later, Node.js 20 or later, and Git are required. The
@@ -122,8 +122,8 @@ credentials or a provider URL.
 Create a private state directory outside the target repository:
 
 ```bash
-mkdir -p /absolute/private/agent-delegation-state
-chmod 700 /absolute/private/agent-delegation-state
+mkdir -p /absolute/private/relaypact-state
+chmod 700 /absolute/private/relaypact-state
 ```
 
 The state directory holds the sanitized capsule, worker home, review packet,
@@ -147,12 +147,12 @@ uses a disposable Git repository and retains only bounded aggregate evidence.
 Run it only after `OPENCODE_GO_API_KEY` is available in the host environment:
 
 ```bash
-cd "$ADK_ROOT"
-ADK_DIRECT_CODEX_SMOKE=1 \
-ADK_DIRECT_PROVIDER_NAME=opencode-go \
-ADK_DIRECT_PROVIDER_BASE_URL=https://opencode.ai/zen/go/v1 \
-ADK_DIRECT_PROVIDER_MODEL=gpt-5.6-luna \
-ADK_DIRECT_PROVIDER_CREDENTIAL_ENV=OPENCODE_GO_API_KEY \
+cd "$RELAYPACT_ROOT"
+RELAYPACT_DIRECT_CODEX_SMOKE=1 \
+RELAYPACT_DIRECT_PROVIDER_NAME=opencode-go \
+RELAYPACT_DIRECT_PROVIDER_BASE_URL=https://opencode.ai/zen/go/v1 \
+RELAYPACT_DIRECT_PROVIDER_MODEL=gpt-5.6-luna \
+RELAYPACT_DIRECT_PROVIDER_CREDENTIAL_ENV=OPENCODE_GO_API_KEY \
 npm run smoke:codex-direct
 ```
 
@@ -165,10 +165,10 @@ provider reliability.
 From the cloned package repository, run:
 
 ```bash
-node ./bin/agent-delegation-kit.mjs run-codex \
+node ./bin/relaypact.mjs run-codex \
   --envelope /absolute/private/opencode-go-luna-envelope.json \
   --profiles ./examples/codex-worker-profiles.opencode-go-luna.json \
-  --state-root /absolute/private/agent-delegation-state \
+  --state-root /absolute/private/relaypact-state \
   --host-instance codex-desktop-local
 ```
 
@@ -193,7 +193,7 @@ After installing the plugin, ask Codex Desktop to use the packaged Skill and
 provide the host-owned paths it needs. A suitable request is:
 
 ```text
-Use $codex-delegated-execution to coordinate this task. Delegate execution to
+Use $relaypact to coordinate this task. Delegate execution to
 the opencode-go-luna Codex worker profile. Keep the target source unchanged
 until I review the candidate patch. Use the private envelope, profile registry,
 and state-root paths I provide. Stop on missing context, scope breach, failed
@@ -221,8 +221,8 @@ Before acceptance:
 An in-scope correction can resume the exact delegated thread:
 
 ```bash
-node ./bin/agent-delegation-kit.mjs correct-codex \
-  --task-root /absolute/private/agent-delegation-state/adk-task-id \
+node ./bin/relaypact.mjs correct-codex \
+  --task-root /absolute/private/relaypact-state/relaypact-task-id \
   --profiles ./examples/codex-worker-profiles.opencode-go-luna.json \
   --prompt /absolute/private/correction.txt
 ```
@@ -244,7 +244,7 @@ when the named variable is missing.
 
 Confirm the account, subscription, endpoint, and current OpenCode Go access.
 Then check regional or network policy. Configure a personal proxy only when
-your environment requires it; a proxy is not part of Agent Delegation Kit.
+your environment requires it; a proxy is not part of RelayPact.
 
 ### Model or operation not found
 

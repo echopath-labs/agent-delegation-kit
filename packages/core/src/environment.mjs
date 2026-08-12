@@ -36,7 +36,7 @@ export function minimalEnvironment(source = process.env, options = {}) {
 }
 
 export async function createIsolatedEnvironment(source = process.env, options = {}) {
-  const root = await mkdtemp(path.join(os.tmpdir(), options.prefix ?? "adk-env-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), options.prefix ?? "relaypact-env-"));
   const home = path.join(root, "home");
   const temporary = path.join(root, "tmp");
   await mkdir(home, { recursive: true, mode: 0o700 });

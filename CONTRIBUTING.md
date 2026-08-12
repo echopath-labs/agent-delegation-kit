@@ -14,3 +14,15 @@ Before submitting a change:
 
 Public changes should be understandable without access to any private planning
 workspace.
+
+## Contribution license
+
+RelayPact is licensed under the
+[Apache License 2.0](LICENSE). Unless you explicitly state otherwise, an
+intentional contribution submitted for inclusion in this repository is
+provided under Apache-2.0, as described by Section 5 of the license. This
+project does not require a Contributor License Agreement for the public preview.
+
+Contributors retain copyright in their contributions. Do not submit code,
+documentation, generated output, or other material that you do not have the
+right to license under these terms.
