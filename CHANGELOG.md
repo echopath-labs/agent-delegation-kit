@@ -1,6 +1,6 @@
 # Changelog
 
-All notable public changes to Agent Delegation Kit are recorded here.
+All notable public changes to RelayPact are recorded here.
 
 ## [0.1.0] - Unreleased Public Preview
 
@@ -100,4 +100,4 @@ All notable public changes to Agent Delegation Kit are recorded here.
 - npm distribution is not part of this preview; installation is from a cloned
   GitHub repository through the packaged local marketplace.
 
-[0.1.0]: https://github.com/echopath-labs/agent-delegation-kit/releases/tag/v0.1.0
+[0.1.0]: https://github.com/echopath-labs/relaypact/releases/tag/v0.1.0

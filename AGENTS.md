@@ -1,4 +1,4 @@
-# Agent Delegation Kit Public Repository Instructions
+# RelayPact Public Repository Instructions
 
 This repository is the independently publishable public source tree. Keep
 private planning records, local credentials, personal paths, raw execution

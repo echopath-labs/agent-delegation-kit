@@ -1,9 +1,9 @@
 ---
-name: codex-delegated-execution
+name: relaypact
 description: Use when Codex should delegate a bounded engineering task to an independent Codex executor while retaining scope control, evidence review, risk judgment, and final acceptance responsibility.
 ---
 
-# Codex Delegated Execution
+# RelayPact
 
 Delegate implementation without delegating ownership or acceptance.
 

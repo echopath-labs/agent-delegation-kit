@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Agent Delegation Kit is currently a human-reviewed `0.1.x` Public Preview.
+RelayPact is currently a human-reviewed `0.1.x` Public Preview.
 Security fixes are provided on a best-effort basis for the latest published
 `0.1.x` release. Unreleased commits, older preview snapshots, unattended use,
 and locally modified adapters are not supported release channels.
@@ -15,7 +15,7 @@ experimental and is not activated by the root Skill.
 
 Use GitHub private vulnerability reporting for this repository:
 
-<https://github.com/echopath-labs/agent-delegation-kit/security/advisories/new>
+<https://github.com/echopath-labs/relaypact/security/advisories/new>
 
 Repository maintainers must enable private vulnerability reporting before the
 first public preview. If the private reporting form is unavailable, do not put

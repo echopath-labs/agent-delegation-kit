@@ -81,9 +81,9 @@ read from the host process at runtime and must not be committed.
 ## Direct-provider smoke validation
 
 The standard suite uses fake runners and needs no provider credential. To run a
-real direct-route smoke explicitly, set `ADK_DIRECT_CODEX_SMOKE=1` plus
-`ADK_DIRECT_PROVIDER_NAME`, `ADK_DIRECT_PROVIDER_BASE_URL`,
-`ADK_DIRECT_PROVIDER_MODEL`, and `ADK_DIRECT_PROVIDER_CREDENTIAL_ENV`. Set the
+real direct-route smoke explicitly, set `RELAYPACT_DIRECT_CODEX_SMOKE=1` plus
+`RELAYPACT_DIRECT_PROVIDER_NAME`, `RELAYPACT_DIRECT_PROVIDER_BASE_URL`,
+`RELAYPACT_DIRECT_PROVIDER_MODEL`, and `RELAYPACT_DIRECT_PROVIDER_CREDENTIAL_ENV`. Set the
 credential itself in the variable named by the last setting, then run:
 
 ```bash
@@ -91,7 +91,7 @@ npm run smoke:codex-direct
 ```
 
 The smoke retains only bounded review evidence and aggregate metrics. Do not
-paste a credential value into any `ADK_DIRECT_*` setting, example, task envelope,
+paste a credential value into any `RELAYPACT_DIRECT_*` setting, example, task envelope,
 or committed shell script.
 
 ## Exposure modes

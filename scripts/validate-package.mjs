@@ -5,10 +5,23 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CANONICAL_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
-const PROJECT_NAME = "agent-delegation-kit";
+const PROJECT_NAME = "relaypact";
+const PROJECT_DISPLAY_NAME = "RelayPact";
 const PROJECT_LICENSE = "Apache-2.0";
+const PROJECT_REPOSITORY = "https://github.com/echopath-labs/relaypact";
+const PROJECT_MARKETPLACE = "relaypact-local";
+const PROJECT_SKILL = "relaypact";
 const REVIEWED_LICENSE_SHA256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30";
-const REVIEWED_NOTICE_SHA256 = "22febf2c389cfe9e268c5a985fefdf452955b8551e782b6a21c898278bbfef5f";
+const REVIEWED_NOTICE_SHA256 = "5b11b2690e855e2c91fd96648a5e3772a2d433c094616ac4397a0b6106f76dd2";
+const FORMER_IDENTITY_VALUES = [
+  ["agent", "delegation", "kit"].join("-"),
+  ["agent", "delegation", "kit"].join("_"),
+  ["agent", "delegation", "kit"].join(" "),
+  ["codex", "delegated", "execution"].join("-"),
+  ["a", "d", "k", "_"].join(""),
+  ["a", "d", "k", "-"].join(""),
+  `.${["agent", "delegation"].join("-")}`
+];
 const MANIFEST_FIELDS = new Set([
   "$schema", "name", "version", "description", "author", "homepage",
   "repository", "license", "keywords", "extensions"
@@ -39,7 +52,7 @@ const REQUIRED_PREVIEW_FILES = [
   "docs/agent-quickstart.md",
   "docs/agent-quickstart.zh-CN.md",
   "docs/manual-configuration.md",
-  "skills/codex-delegated-execution/references/agent-setup.md",
+  "skills/relaypact/references/agent-setup.md",
   ".github/workflows/validate.yml"
 ];
 
@@ -70,6 +83,9 @@ function validateManifest(manifest, errors) {
   }
   if (manifest.$schema !== CANONICAL_SCHEMA) errors.push("plugin.json must target Agent Plugins 1.0.0.");
   if (manifest.name !== PROJECT_NAME) errors.push(`plugin.json name must remain ${PROJECT_NAME}.`);
+  if (manifest.homepage !== PROJECT_REPOSITORY || manifest.repository !== PROJECT_REPOSITORY) {
+    errors.push(`plugin.json repository identities must remain ${PROJECT_REPOSITORY}.`);
+  }
   if (manifest.license !== PROJECT_LICENSE) errors.push(`plugin.json license must be ${PROJECT_LICENSE}.`);
   if (typeof manifest.name !== "string" || !/^[a-z0-9](?!.*(?:--|\.\.))[a-z0-9.-]{0,62}[a-z0-9]$|^[a-z0-9]$/.test(manifest.name)) {
     errors.push("plugin.json name is invalid.");
@@ -109,8 +125,8 @@ async function validateProjectOnboarding(root, errors) {
     "docs/agent-quickstart.md",
     "docs/agent-quickstart.zh-CN.md",
     "docs/manual-configuration.md",
-    "skills/codex-delegated-execution/SKILL.md",
-    "skills/codex-delegated-execution/references/agent-setup.md",
+    "skills/relaypact/SKILL.md",
+    "skills/relaypact/references/agent-setup.md",
     "CONTRIBUTING.md",
     "RELEASING.md",
     "LICENSE",
@@ -118,6 +134,7 @@ async function validateProjectOnboarding(root, errors) {
   ].map(async (relative) => [relative, await readRequiredText(root, relative, errors)])));
 
   const sharedReadmeFacts = [
+    PROJECT_DISPLAY_NAME, PROJECT_REPOSITORY, PROJECT_MARKETPLACE,
     "0.1.0", "codex-codex", "public-preview", "Codex CLI 0.147.0",
     "Node.js 20", "Apache License 2.0", "SECURITY.md",
     "docs/manual-configuration.md", "codex exec --help", "v0.1.0",
@@ -127,7 +144,7 @@ async function validateProjectOnboarding(root, errors) {
     ...sharedReadmeFacts,
     "[简体中文](README.zh-CN.md)",
     "docs/agent-quickstart.md",
-    "$codex-delegated-execution",
+    "$relaypact",
     "NOTICE",
     "No additional executor installation is required.",
     "not an independent cryptographic guarantee"
@@ -136,7 +153,7 @@ async function validateProjectOnboarding(root, errors) {
     ...sharedReadmeFacts,
     "[English](README.md)",
     "docs/agent-quickstart.zh-CN.md",
-    "$codex-delegated-execution",
+    "$relaypact",
     "NOTICE",
     "不需要额外安装 executor。",
     "不是独立的密码学保证"
@@ -144,7 +161,7 @@ async function validateProjectOnboarding(root, errors) {
 
   for (const relative of ["docs/agent-quickstart.md", "docs/agent-quickstart.zh-CN.md"]) {
     requireText(files[relative], [
-      "$codex-delegated-execution",
+      "$relaypact",
       "manual-configuration.md",
       "opencode-go-luna.md",
       "accept",
@@ -167,14 +184,14 @@ async function validateProjectOnboarding(root, errors) {
     "额度或费用"
   ], "docs/agent-quickstart.zh-CN.md", errors);
 
-  requireText(files["skills/codex-delegated-execution/SKILL.md"], [
-    "references/agent-setup.md", "support", "doctor", "codex exec", "credential-free", "private",
+  requireText(files["skills/relaypact/SKILL.md"], [
+    `name: ${PROJECT_SKILL}`, "# RelayPact", "references/agent-setup.md", "support", "doctor", "codex exec", "credential-free", "private",
     "Do not substitute", "Acceptance archives evidence"
-  ], "skills/codex-delegated-execution/SKILL.md", errors);
-  requireText(files["skills/codex-delegated-execution/references/agent-setup.md"], [
+  ], "skills/relaypact/SKILL.md", errors);
+  requireText(files["skills/relaypact/references/agent-setup.md"], [
     "support", "doctor", "codex exec", "readablePaths", "allowedPaths", "credential-free",
     "private", "fail-closed", "accept", "reject", "abandon"
-  ], "skills/codex-delegated-execution/references/agent-setup.md", errors);
+  ], "skills/relaypact/references/agent-setup.md", errors);
 
   requireText(files["docs/manual-configuration.md"], [
     "v0.1.0", "doctor", "needs_setup", "codex exec --help",
@@ -194,7 +211,11 @@ async function validateProjectOnboarding(root, errors) {
 
   try {
     const packageManifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+    if (packageManifest.name !== PROJECT_NAME) errors.push(`package.json name must be ${PROJECT_NAME}.`);
     if (packageManifest.license !== PROJECT_LICENSE) errors.push(`package.json license must be ${PROJECT_LICENSE}.`);
+    if (packageManifest.bin?.[PROJECT_NAME] !== "./bin/relaypact.mjs" || Object.keys(packageManifest.bin ?? {}).length !== 1) {
+      errors.push("package.json must expose only the canonical relaypact CLI binary.");
+    }
   } catch (error) {
     errors.push(`package.json is missing or invalid JSON: ${error.message}`);
   }
@@ -304,8 +325,11 @@ export async function validatePackage(root) {
     const entry = Array.isArray(marketplace.plugins)
       ? marketplace.plugins.find((item) => item?.name === manifest?.name)
       : null;
-    if (typeof marketplace.name !== "string" || marketplace.name.length === 0) {
-      errors.push("Local marketplace name is missing or invalid.");
+    if (marketplace.name !== PROJECT_MARKETPLACE) {
+      errors.push(`Local marketplace name must remain ${PROJECT_MARKETPLACE}.`);
+    }
+    if (marketplace.interface?.displayName !== PROJECT_DISPLAY_NAME) {
+      errors.push(`Local marketplace display name must remain ${PROJECT_DISPLAY_NAME}.`);
     }
     if (!entry || entry.source?.source !== "local" || entry.source?.path !== ".") {
       errors.push("Local marketplace must expose the root plugin by its manifest name.");
@@ -316,6 +340,18 @@ export async function validatePackage(root) {
 
   const entries = await walk(resolvedRoot);
   await validateMarkdownLinks(resolvedRoot, entries, errors);
+  for (const item of entries) {
+    const normalizedPath = item.relative.toLowerCase();
+    if (FORMER_IDENTITY_VALUES.some((value) => normalizedPath.includes(value))) {
+      errors.push(`Former public identity is not allowed in path ${item.relative}.`);
+    }
+    if (item.entry.isFile() && /\.(?:md|json|mjs|js|txt|ya?ml)$/iu.test(item.relative)) {
+      const text = (await readFile(item.absolute, "utf8")).toLowerCase();
+      if (FORMER_IDENTITY_VALUES.some((value) => text.includes(value))) {
+        errors.push(`Former public identity is not allowed in ${item.relative}.`);
+      }
+    }
+  }
   if (publicFiles) {
     const actualFiles = entries
       .filter((item) => item.entry.isFile())
@@ -349,12 +385,13 @@ export async function validatePackage(root) {
     for (const skill of skills) {
       const skillFile = path.join(skillsRoot, skill.name, "SKILL.md");
       if (!(await pathExists(skillFile))) errors.push(`skills/${skill.name}/SKILL.md is missing.`);
-      if (skill.name === "codex-delegated-execution") {
-        const wrapper = path.join(skillsRoot, skill.name, "scripts", "agent-delegation-kit.mjs");
+      if (skill.name === PROJECT_SKILL) {
+        const wrapper = path.join(skillsRoot, skill.name, "scripts", "relaypact.mjs");
         if (!(await pathExists(wrapper))) errors.push("The Codex delegation Skill-local wrapper is missing.");
         else if (((await stat(wrapper)).mode & 0o111) === 0) errors.push("The Codex delegation Skill-local wrapper must be executable.");
       }
     }
+    if (!skills.some((skill) => skill.name === PROJECT_SKILL)) errors.push("The canonical RelayPact Skill is missing.");
   }
 
   for (const item of entries) {

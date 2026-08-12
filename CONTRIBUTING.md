@@ -17,7 +17,7 @@ workspace.
 
 ## Contribution license
 
-Agent Delegation Kit is licensed under the
+RelayPact is licensed under the
 [Apache License 2.0](LICENSE). Unless you explicitly state otherwise, an
 intentional contribution submitted for inclusion in this repository is
 provided under Apache-2.0, as described by Section 5 of the license. This

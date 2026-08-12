@@ -208,7 +208,7 @@ export async function loadCodexDelegation(taskRootInput, profileRegistry) {
     resultSchemaPath: path.join(controlRoot, "codex-worker-result.schema.json"),
     contextManifestPath: contextManifestFingerprint ? path.join(controlRoot, "context-manifest.json") : null,
     executorContextManifestPath: contextManifestFingerprint
-      ? path.join(capsuleRoot, ".agent-delegation", "context-manifest.json")
+      ? path.join(capsuleRoot, ".relaypact", "context-manifest.json")
       : null,
     contextManifestFingerprint,
     mode: marker.mode,

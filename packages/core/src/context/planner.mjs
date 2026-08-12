@@ -7,7 +7,7 @@ import { globToRegExp, normalizeRelativePath } from "../../../contracts/src/path
 import { analyzeSource } from "./analyzer.mjs";
 import { analyzeNodeEsm } from "./node-esm.mjs";
 
-const PRIVATE_SEGMENTS = new Set([".git", ".agent-delegation", ".pi", ".codex", ".ssh", "node_modules", "private", "credentials"]);
+const PRIVATE_SEGMENTS = new Set([".git", ".relaypact", ".pi", ".codex", ".ssh", "node_modules", "private", "credentials"]);
 const PRIVATE_FILES = /^(?:\.env(?:\..*)?|auth\.json|credentials?(?:\..*)?|secrets?(?:\..*)?)$/iu;
 const MAX_ANALYZER_REFERENCES = 200_000;
 

@@ -4,9 +4,9 @@ import { runProcess } from "../../core/src/process.mjs";
 import { MINIMUM_CODEX_VERSION, parseCodexVersion } from "../../executor-codex/src/compatibility.mjs";
 
 const MINIMUM_NODE_MAJOR = 20;
-const EXPECTED_MARKETPLACE = "agent-delegation-kit-local";
-const EXPECTED_PLUGIN = "agent-delegation-kit";
-const EXPECTED_SKILL = "codex-delegated-execution";
+const EXPECTED_MARKETPLACE = "relaypact-local";
+const EXPECTED_PLUGIN = "relaypact";
+const EXPECTED_SKILL = "relaypact";
 const PROBE_TIMEOUT_MS = 5_000;
 const PROBE_CAPTURE_BYTES = 256 * 1024;
 const SAFE_ENVIRONMENT_NAMES = [
@@ -14,7 +14,7 @@ const SAFE_ENVIRONMENT_NAMES = [
   "TMPDIR", "SHELL", "SSL_CERT_FILE", "SSL_CERT_DIR"
 ];
 const PLUGIN_MANIFEST_PATH = fileURLToPath(new URL("../../../plugin.json", import.meta.url));
-const SKILL_PATH = fileURLToPath(new URL("../../../skills/codex-delegated-execution/SKILL.md", import.meta.url));
+const SKILL_PATH = fileURLToPath(new URL("../../../skills/relaypact/SKILL.md", import.meta.url));
 
 function safeEnvironment(source) {
   return Object.fromEntries(SAFE_ENVIRONMENT_NAMES.flatMap((name) => (
@@ -153,8 +153,8 @@ export async function runDoctor(options = {}) {
       "marketplace",
       EXPECTED_MARKETPLACE,
       marketplaceListHasIdentity,
-      "Agent Delegation Kit marketplace is visible.",
-      "Agent Delegation Kit marketplace is not visible.",
+      "RelayPact marketplace is visible.",
+      "RelayPact marketplace is not visible.",
       "add-marketplace"
     );
     checks.push(marketplaceCheck);
@@ -166,8 +166,8 @@ export async function runDoctor(options = {}) {
         "plugin",
         EXPECTED_PLUGIN,
         pluginListHasIdentity,
-        "Agent Delegation Kit plugin is installed and visible.",
-        "Agent Delegation Kit plugin is not installed or visible.",
+        "RelayPact plugin is installed and visible.",
+        "RelayPact plugin is not installed or visible.",
         "install-plugin"
       ));
     } else {

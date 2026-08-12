@@ -13,8 +13,8 @@ switch (scenario) {
   case "environment": {
     write("allowed.txt", "delegated edit\n");
     const isolated = process.env.HOST_SECRET === undefined &&
-      process.env.HOME?.includes("adk-pi-") &&
-      process.env.TMPDIR?.includes("adk-pi-") &&
+      process.env.HOME?.includes("relaypact-pi-") &&
+      process.env.TMPDIR?.includes("relaypact-pi-") &&
       process.env.PI_CODING_AGENT_SESSION_DIR === process.env.TMPDIR &&
       typeof process.env.PI_CODING_AGENT_DIR === "string";
     result(isolated ? "completed" : "failed", isolated ? "Environment isolated." : "Environment exposed.");

@@ -10,7 +10,7 @@ Copy `task-envelope.json`, set `repository.root` to a clean disposable Git
 repository, keep `scope.allowedPaths` narrow, and run:
 
 ```bash
-node ../bin/agent-delegation-kit.mjs run-pi \
+node ../bin/relaypact.mjs run-pi \
   --envelope ./task-envelope.json
 ```
 
@@ -39,7 +39,7 @@ Prepare private task state outside the target repository, then run the Codex
 adapter with `codex-task-envelope.json` and `codex-worker-profiles.json`:
 
 ```bash
-node ../bin/agent-delegation-kit.mjs run-codex \
+node ../bin/relaypact.mjs run-codex \
   --envelope ./codex-task-envelope.json \
   --profiles ./codex-worker-profiles.json \
   --state-root /absolute/private/task-state \
@@ -52,8 +52,8 @@ original authority and context identity, copy `codex-correction-request.json`
 to a private prompt file and run:
 
 ```bash
-node ../bin/agent-delegation-kit.mjs correct-codex \
-  --task-root /absolute/private/task-state/adk-task-id-uuid \
+node ../bin/relaypact.mjs correct-codex \
+  --task-root /absolute/private/task-state/relaypact-task-id-uuid \
   --profiles ./codex-worker-profiles.json \
   --prompt /absolute/private/correction.txt
 ```

@@ -1,14 +1,14 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "agent-delegation-kit",
+  "name": "relaypact",
   "version": "0.1.0",
   "description": "Contract-first bounded delegation from Codex to an independent Codex executor, with isolated future Agent adapters.",
   "author": {
     "name": "EchoPath Labs",
     "url": "https://github.com/echopath-labs"
   },
-  "homepage": "https://github.com/echopath-labs/agent-delegation-kit",
-  "repository": "https://github.com/echopath-labs/agent-delegation-kit",
+  "homepage": "https://github.com/echopath-labs/relaypact",
+  "repository": "https://github.com/echopath-labs/relaypact",
   "license": "Apache-2.0",
   "keywords": [
     "agent-delegation",

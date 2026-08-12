@@ -61,7 +61,7 @@ function result(summary = "Done") {
 
 async function preparedFixture() {
   const root = await createGitRepository();
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-controller-state-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-controller-state-"));
   const envelope = makeEnvelope(root, {
     executionProfile: "worker",
     scope: { readablePaths: ["README.md"] }
@@ -76,7 +76,7 @@ async function plannedFixture(readiness = []) {
   await writeFile(path.join(root, "src", "dependency.mjs"), "export const value = true;\n");
   await execFileAsync("git", ["add", "src"], { cwd: root });
   await execFileAsync("git", ["commit", "-m", "test: add planner fixture"], { cwd: root });
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-controller-planned-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-controller-planned-"));
   const envelope = makeEnvelope(root, {
     executionProfile: "worker",
     scope: {
@@ -375,7 +375,7 @@ test("planned correction requires the unchanged manifest identity before any rou
     correctCodexDelegation(prepared, { ...identity, contextManifestFingerprint: "sha256:different" }, correctionOptions),
     (error) => error.code === "resume_identity_mismatch" && /contextManifestFingerprint/.test(error.message)
   );
-  const visibleManifestPath = path.join(prepared.capsule.capsuleRoot, ".agent-delegation", "context-manifest.json");
+  const visibleManifestPath = path.join(prepared.capsule.capsuleRoot, ".relaypact", "context-manifest.json");
   const visibleManifest = await readFile(visibleManifestPath, "utf8");
   const tampered = { ...JSON.parse(visibleManifest), extra: true };
   await writeFile(visibleManifestPath, `${JSON.stringify(tampered)}\n`);
@@ -405,7 +405,7 @@ test("controller fails when delegated identity cannot be separated from the host
 
 test("controller refuses an unavailable named profile before capsule creation", async () => {
   const root = await createGitRepository();
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-controller-missing-profile-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-controller-missing-profile-"));
   const envelope = makeEnvelope(root, { executionProfile: "missing", scope: { readablePaths: ["README.md"] } });
   await assert.rejects(
     prepareCodexDelegation({ envelope, profileRegistry, stateRoot, hostInstanceId: "desktop-host-1" }, { compatibilityProcess }),
@@ -416,7 +416,7 @@ test("controller refuses an unavailable named profile before capsule creation", 
 
 test("controller fails closed on router health without creating a capsule or fallback route", async () => {
   const root = await createGitRepository();
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-controller-router-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-controller-router-"));
   const routedRegistry = {
     schemaVersion: "1.0.0",
     profiles: {
@@ -440,7 +440,7 @@ test("controller fails closed on router health without creating a capsule or fal
 
 test("controller rejects a missing direct provider credential and cleans provisional state", async () => {
   const root = await createGitRepository();
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-controller-direct-missing-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-controller-direct-missing-"));
   const directRegistry = {
     schemaVersion: "1.0.0",
     profiles: {
@@ -469,7 +469,7 @@ test("controller rejects a missing direct provider credential and cleans provisi
 
 test("controller prepares a direct provider only from host environment configuration", async () => {
   const root = await createGitRepository();
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-controller-direct-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-controller-direct-"));
   const directRegistry = {
     schemaVersion: "1.0.0",
     profiles: {

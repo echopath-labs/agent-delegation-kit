@@ -11,7 +11,7 @@ import { runDoctor } from "../packages/cli/src/doctor.mjs";
 
 const execFileAsync = promisify(execFile);
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const wrapper = path.join(packageRoot, "skills", "codex-delegated-execution", "scripts", "agent-delegation-kit.mjs");
+const wrapper = path.join(packageRoot, "skills", "relaypact", "scripts", "relaypact.mjs");
 const fakeCodex = path.join(packageRoot, "test", "fixtures", "fake-codex.mjs");
 
 test("Skill-local wrapper exposes sanitized support metadata", async () => {
@@ -33,8 +33,8 @@ function doctorRunner(scenario = {}) {
       "git --version": { stdout: "git version 2.50.0\n" },
       "codex --version": { stdout: "codex-cli 0.147.0\n" },
       "codex exec --help": { stdout: "Run Codex non-interactively\nUsage: codex exec [OPTIONS]\n" },
-      "codex plugin marketplace list --json": { stdout: JSON.stringify({ marketplaces: [{ name: "agent-delegation-kit-local" }] }) },
-      "codex plugin list --marketplace agent-delegation-kit-local --json": { stdout: JSON.stringify({ installed: [{ name: "agent-delegation-kit" }] }) }
+      "codex plugin marketplace list --json": { stdout: JSON.stringify({ marketplaces: [{ name: "relaypact-local" }] }) },
+      "codex plugin list --marketplace relaypact-local --json": { stdout: JSON.stringify({ installed: [{ name: "relaypact" }] }) }
     };
     return {
       exitCode: 0,
@@ -84,8 +84,8 @@ test("doctor distinguishes compatible runtime from missing plugin setup", async 
 
 test("doctor accepts identities only from the documented listing collections", async () => {
   for (const stdout of [
-    JSON.stringify({ unrelatedDiagnostic: "agent-delegation-kit-local" }),
-    JSON.stringify({ metadata: { name: "agent-delegation-kit-local" }, marketplaces: [] })
+    JSON.stringify({ unrelatedDiagnostic: "relaypact-local" }),
+    JSON.stringify({ metadata: { name: "relaypact-local" }, marketplaces: [] })
   ]) {
     const fixture = doctorRunner({ results: {
       "codex plugin marketplace list --json": {
@@ -103,9 +103,9 @@ test("doctor accepts identities only from the documented listing collections", a
   }
 
   const pluginFixture = doctorRunner({ results: {
-    "codex plugin list --marketplace agent-delegation-kit-local --json": {
+    "codex plugin list --marketplace relaypact-local --json": {
       exitCode: 0,
-      stdout: JSON.stringify({ diagnostic: "agent-delegation-kit", available: [{ name: "agent-delegation-kit" }], installed: [] }),
+      stdout: JSON.stringify({ diagnostic: "relaypact", available: [{ name: "relaypact" }], installed: [] }),
       stderr: "",
       stdoutTruncated: false,
       stderrTruncated: false,
@@ -163,7 +163,7 @@ test("doctor blocks unavailable codex exec and sanitizes malformed, timed-out, a
 
 test("Skill-local wrapper completes fake Codex execution through pending review", async (context) => {
   const repository = await createGitRepository();
-  const privateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-cli-codex-"));
+  const privateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-cli-codex-"));
   const stateRoot = await mkdtemp(path.join(privateRoot, "state-"));
   const archiveRoot = await mkdtemp(path.join(privateRoot, "archive-"));
   const envelopePath = path.join(privateRoot, "envelope.json");

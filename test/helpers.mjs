@@ -7,10 +7,10 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 export async function createGitRepository() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "agent-delegation-kit-test-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "relaypact-test-"));
   await execFileAsync("git", ["init", "-b", "main"], { cwd: root });
   await execFileAsync("git", ["config", "user.email", "tests@example.invalid"], { cwd: root });
-  await execFileAsync("git", ["config", "user.name", "Agent Delegation Kit Tests"], { cwd: root });
+  await execFileAsync("git", ["config", "user.name", "RelayPact Tests"], { cwd: root });
   await writeFile(path.join(root, "README.md"), "# Fixture\n", "utf8");
   await execFileAsync("git", ["add", "README.md"], { cwd: root });
   await execFileAsync("git", ["commit", "-m", "test: baseline"], { cwd: root });
@@ -18,7 +18,7 @@ export async function createGitRepository() {
 }
 
 export async function createDirectory() {
-  return mkdtemp(path.join(os.tmpdir(), "agent-delegation-kit-dir-"));
+  return mkdtemp(path.join(os.tmpdir(), "relaypact-dir-"));
 }
 
 export async function makeMinimalPlugin(root, manifest) {

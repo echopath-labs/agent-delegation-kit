@@ -2,7 +2,7 @@
 
 [English](agent-quickstart.md) | [简体中文](agent-quickstart.zh-CN.md)
 
-This is the recommended way to use Agent Delegation Kit. The coordinating
+This is the recommended way to use RelayPact. The coordinating
 Agent prepares the bounded task and private artifacts; the human approves
 material authority and retains final control.
 
@@ -33,7 +33,7 @@ Give Codex this prompt before the plugin is installed:
 
 ```text
 After v0.1.0 is published, clone its versioned release tag from
-https://github.com/echopath-labs/agent-delegation-kit into a local tools
+https://github.com/echopath-labs/relaypact into a local tools
 directory outside my target repository. Treat that tag as a version selector
 from the trusted official repository. It is not an independent cryptographic guarantee.
 If I provide a separately trusted full commit SHA, require an exact
@@ -50,10 +50,10 @@ The Agent should run the equivalent of:
 
 ```bash
 git clone --branch v0.1.0 --depth 1 \
-  https://github.com/echopath-labs/agent-delegation-kit.git
-codex plugin marketplace add /absolute/path/to/agent-delegation-kit --json
-codex plugin add agent-delegation-kit@agent-delegation-kit-local --json
-codex plugin list --marketplace agent-delegation-kit-local --json
+  https://github.com/echopath-labs/relaypact.git
+codex plugin marketplace add /absolute/path/to/relaypact --json
+codex plugin add relaypact@relaypact-local --json
+codex plugin list --marketplace relaypact-local --json
 ```
 
 Start a new Codex task after installation so the packaged Skill is present in
@@ -64,7 +64,7 @@ the task's skill catalog.
 Use this prompt in the new task:
 
 ```text
-Use $codex-delegated-execution to delegate a bounded engineering task.
+Use $relaypact to delegate a bounded engineering task.
 
 Target repository: <absolute path>
 Goal: <specific desired outcome>
@@ -196,7 +196,7 @@ See [SECURITY.md](../SECURITY.md) for the threat boundary and
 
 ## What this workflow does not automate
 
-Agent Delegation Kit does not decide product requirements, supply credentials,
+RelayPact does not decide product requirements, supply credentials,
 approve broader authority, apply patches, commit, push, tag, publish, release,
 or deploy. Those remain explicit host or human actions.
 

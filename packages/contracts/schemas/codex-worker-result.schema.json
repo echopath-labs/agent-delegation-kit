@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/echopath-labs/agent-delegation-kit/main/packages/contracts/schemas/codex-worker-result.schema.json",
+  "$id": "https://raw.githubusercontent.com/echopath-labs/relaypact/main/packages/contracts/schemas/codex-worker-result.schema.json",
   "title": "Codex Delegated Worker Result",
   "type": "object",
   "additionalProperties": false,

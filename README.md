@@ -1,8 +1,8 @@
-# Agent Delegation Kit
+# RelayPact
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Agent Delegation Kit lets a coordinating Agent delegate bounded engineering
+RelayPact lets a coordinating Agent delegate bounded engineering
 work to an independent executor without delegating scope control, evidence
 review, risk judgment, or final acceptance.
 
@@ -10,7 +10,7 @@ The first public-preview route is **Codex → Codex**. Codex coordinates and
 reviews an independent Codex Agent Instance while preserving the Codex harness
 across compatible model and provider routes.
 
-Agent Delegation Kit provides the delegation workflow, scope controls,
+RelayPact provides the delegation workflow, scope controls,
 execution isolation, evidence collection, and acceptance lifecycle. The actual
 executor is an independent `codex exec` process supplied by the Codex CLI
 already installed on the user's machine. No second Codex installation or
@@ -24,7 +24,7 @@ No additional executor installation is required.
 
 Multi-Agent development usually fails at the handoff: context is incomplete,
 write authority is vague, executor success is mistaken for acceptance, or the
-result cannot be reviewed independently. Agent Delegation Kit structures that
+result cannot be reviewed independently. RelayPact structures that
 handoff with:
 
 - a task envelope with explicit readable, writable, and forbidden paths;
@@ -71,7 +71,7 @@ Give a coordinating Codex instance this prompt:
 
 ```text
 After v0.1.0 is published, clone its versioned release tag from
-https://github.com/echopath-labs/agent-delegation-kit into a local tools
+https://github.com/echopath-labs/relaypact into a local tools
 directory outside my target repository. Treat that tag as a version selector
 from the trusted official repository. It is not an independent cryptographic guarantee.
 If I provide a separately trusted full commit SHA, require an exact
@@ -89,7 +89,7 @@ After installation, start a new Codex task so the installed Skill is available.
 ### 2. Ask the installed Skill to delegate
 
 ```text
-Use $codex-delegated-execution to delegate this bounded engineering task.
+Use $relaypact to delegate this bounded engineering task.
 
 Target repository: <absolute path>
 Goal: <what should change>
@@ -124,10 +124,10 @@ If an Agent needs the exact underlying commands, they are:
 
 ```bash
 git clone --branch v0.1.0 --depth 1 \
-  https://github.com/echopath-labs/agent-delegation-kit.git
-codex plugin marketplace add /absolute/path/to/agent-delegation-kit --json
-codex plugin add agent-delegation-kit@agent-delegation-kit-local --json
-codex plugin list --marketplace agent-delegation-kit-local --json
+  https://github.com/echopath-labs/relaypact.git
+codex plugin marketplace add /absolute/path/to/relaypact --json
+codex plugin add relaypact@relaypact-local --json
+codex plugin list --marketplace relaypact-local --json
 ```
 
 After installation, the Skill-local `support` command reports the static route
@@ -202,5 +202,5 @@ test suite.
 
 ## License
 
-Agent Delegation Kit is licensed under the
+RelayPact is licensed under the
 [Apache License 2.0](LICENSE) (`Apache-2.0`). See [NOTICE](NOTICE) for attribution.

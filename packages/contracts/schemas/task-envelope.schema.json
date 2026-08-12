@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/echopath-labs/agent-delegation-kit/main/packages/contracts/schemas/task-envelope.schema.json",
+  "$id": "https://raw.githubusercontent.com/echopath-labs/relaypact/main/packages/contracts/schemas/task-envelope.schema.json",
   "title": "Agent Delegation Task Envelope",
   "type": "object",
   "additionalProperties": false,

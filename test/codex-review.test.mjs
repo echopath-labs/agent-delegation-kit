@@ -34,7 +34,7 @@ const completed = {
 
 async function executeFixture(overrides = {}) {
   const root = await createGitRepository();
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-review-state-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-review-state-"));
   const resolvedOverrides = typeof overrides === "function" ? overrides(root) : overrides;
   const envelope = makeEnvelope(root, {
     executionProfile: "worker",
@@ -129,7 +129,7 @@ test("validation-time source Git-control mutation makes completion ineligible", 
   await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), "bounded change\n");
   const review = await buildHostReviewPacket(fixture.prepared, fixture.execution, {
     runProcess: async () => {
-      await appendFile(path.join(fixture.root, ".git", "config"), "\n[adk-test]\n\tvalue = true\n");
+      await appendFile(path.join(fixture.root, ".git", "config"), "\n[relaypact-test]\n\tvalue = true\n");
       return { exitCode: 0, signal: null, timedOut: false, stdout: "passed", stderr: "" };
     }
   });
@@ -197,7 +197,7 @@ test("validation credential-bearing paths are omitted from retained review evide
 
 test("Codex validation output redacts the complete worker and validation grant union", async () => {
   const root = await createGitRepository();
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-review-state-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-review-state-"));
   const prepared = await prepareCodexDelegation({
     envelope: makeEnvelope(root, { executionProfile: "worker", scope: { readablePaths: ["README.md"] } }),
     profileRegistry,
@@ -260,7 +260,7 @@ test("validation uses the same immutable grant snapshot for binding and executio
 
 test("native credential rotation before review invalidates raw candidate evidence", async () => {
   const root = await createGitRepository();
-  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "adk-review-state-"));
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-review-state-"));
   const prepared = await prepareCodexDelegation({
     envelope: makeEnvelope(root, { executionProfile: "worker", scope: { readablePaths: ["README.md"] } }),
     profileRegistry,
@@ -294,7 +294,7 @@ test("native credential rotation before review invalidates raw candidate evidenc
 
 test("pending review evidence refuses a validation-created directory symlink", async () => {
   const fixture = await executeFixture();
-  const redirected = await mkdtemp(path.join(os.tmpdir(), "adk-review-redirect-"));
+  const redirected = await mkdtemp(path.join(os.tmpdir(), "relaypact-review-redirect-"));
   const review = await buildHostReviewPacket(fixture.prepared, fixture.execution, {
     runProcess: async () => {
       await symlink(redirected, path.join(fixture.prepared.capsule.taskRoot, "evidence"));
@@ -405,7 +405,7 @@ test("terminal host decision archives review evidence before task-scoped cleanup
   const review = await buildHostReviewPacket(fixture.prepared, fixture.execution);
   const decided = await recordTerminalDecision(fixture.prepared, review, "accept", "desktop-host-1");
   assert.equal(decided.packet.acceptance.status, "accepted");
-  const archiveRoot = await mkdtemp(path.join(os.tmpdir(), "adk-review-archive-"));
+  const archiveRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-review-archive-"));
   const symlinkRoot = `${archiveRoot}-link`;
   await symlink(archiveRoot, symlinkRoot);
   await assert.rejects(

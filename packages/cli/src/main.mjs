@@ -10,12 +10,12 @@ const SUPPORT_MATRIX_PATH = fileURLToPath(new URL("../../../support-matrix.json"
 function usage() {
   return [
     "Usage:",
-    "  agent-delegation-kit support",
-    "  agent-delegation-kit doctor",
-    "  agent-delegation-kit run-codex --envelope <file> --profiles <file> --state-root <dir> --host-instance <id>",
-    "  agent-delegation-kit correct-codex --task-root <dir> --profiles <file> --prompt <file>",
-    "  agent-delegation-kit decide-codex --task-root <dir> --profiles <file> --action <accept|reject|abandon> --actor <id> --archive-root <dir>",
-    "  agent-delegation-kit run-pi --envelope <file> [--executor <pi-path>]  # experimental"
+    "  relaypact support",
+    "  relaypact doctor",
+    "  relaypact run-codex --envelope <file> --profiles <file> --state-root <dir> --host-instance <id>",
+    "  relaypact correct-codex --task-root <dir> --profiles <file> --prompt <file>",
+    "  relaypact decide-codex --task-root <dir> --profiles <file> --action <accept|reject|abandon> --actor <id> --archive-root <dir>",
+    "  relaypact run-pi --envelope <file> [--executor <pi-path>]  # experimental"
   ].join("\n");
 }
 

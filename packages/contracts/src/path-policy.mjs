@@ -1,7 +1,7 @@
 import path from "node:path";
 import { DelegationError } from "./errors.mjs";
 
-const RESERVED_SEGMENTS = new Set([".git", ".agent-delegation"]);
+const RESERVED_SEGMENTS = new Set([".git", ".relaypact"]);
 
 export function isReservedPath(value) {
   return String(value).replaceAll("\\", "/").split("/").some((segment) => RESERVED_SEGMENTS.has(segment.toLowerCase()));

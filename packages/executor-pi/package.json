@@ -1,5 +1,5 @@
 {
-  "name": "@agent-delegation-kit/executor-pi",
+  "name": "@relaypact/executor-pi",
   "version": "0.1.0",
   "private": true,
   "type": "module",

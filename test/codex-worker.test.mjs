@@ -48,7 +48,7 @@ function directProfile(baseUrl = "https://provider.example/v1") {
 }
 
 async function fixture() {
-  const taskRoot = await mkdtemp(path.join(os.tmpdir(), "adk-worker-"));
+  const taskRoot = await mkdtemp(path.join(os.tmpdir(), "relaypact-worker-"));
   const capsuleRoot = path.join(taskRoot, "capsule");
   const controlRoot = path.join(taskRoot, "control");
   const capsule = {
@@ -113,7 +113,7 @@ test("Codex worker starts without a shell and captures structured completion", a
 test("direct provider home is private, deterministic, and does not inherit global auth", async () => {
   const { capsule } = await fixture();
   const selected = directProfile();
-  const sourceCodexHome = await mkdtemp(path.join(os.tmpdir(), "adk-global-codex-"));
+  const sourceCodexHome = await mkdtemp(path.join(os.tmpdir(), "relaypact-global-codex-"));
   await writeFile(path.join(sourceCodexHome, "config.toml"), 'model_provider = "unexpected-global"\n');
   await writeFile(path.join(sourceCodexHome, "auth.json"), '{"token":"global-secret"}\n');
   const codexHome = await prepareTaskCodexHome(capsule, selected, { sourceCodexHome });

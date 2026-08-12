@@ -1,11 +1,11 @@
 {
-  "name": "agent-delegation-kit-local",
+  "name": "relaypact-local",
   "interface": {
-    "displayName": "Agent Delegation Kit"
+    "displayName": "RelayPact"
   },
   "plugins": [
     {
-      "name": "agent-delegation-kit",
+      "name": "relaypact",
       "source": {
         "source": "local",
         "path": "."

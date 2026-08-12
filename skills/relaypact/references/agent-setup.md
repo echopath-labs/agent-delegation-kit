@@ -8,12 +8,12 @@ authority and final acceptance.
 
 ## 1. Discover support first
 
-Resolve `scripts/agent-delegation-kit.mjs` relative to the installed Skill
+Resolve `scripts/relaypact.mjs` relative to the installed Skill
 directory and run:
 
 ```text
-node <skill-directory>/scripts/agent-delegation-kit.mjs support
-node <skill-directory>/scripts/agent-delegation-kit.mjs doctor
+node <skill-directory>/scripts/relaypact.mjs support
+node <skill-directory>/scripts/relaypact.mjs doctor
 ```
 
 Do not load Pi, a provider, a router, or credentials during support discovery.

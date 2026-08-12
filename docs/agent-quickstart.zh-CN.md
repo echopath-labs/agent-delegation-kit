@@ -2,7 +2,7 @@
 
 [English](agent-quickstart.md) | [简体中文](agent-quickstart.zh-CN.md)
 
-这是使用 Agent Delegation Kit 的推荐方式：协调 Agent 负责准备有明确边界的任务
+这是使用 RelayPact 的推荐方式：协调 Agent 负责准备有明确边界的任务
 和私有资料，人类批准关键权限并保留最终控制权。
 
 插件提供委派约束、隔离、证据和验收机制；执行来自用户现有 Codex CLI 中的独立
@@ -29,7 +29,7 @@
 插件尚未安装时，把下面的提示词交给 Codex：
 
 ```text
-请在 v0.1.0 发布后，把 https://github.com/echopath-labs/agent-delegation-kit 的
+请在 v0.1.0 发布后，把 https://github.com/echopath-labs/relaypact 的
 版本化 release tag 克隆到目标仓库之外的本地工具目录。该 tag 只是受信任官方仓库
 中的版本选择器，不是独立的密码学保证。如果我另行提供了从可信渠道获得的完整
 commit SHA，必须在安装前精确匹配。读取 README 和最近的 AGENTS.md，
@@ -44,10 +44,10 @@ Agent 应执行等价的底层命令：
 
 ```bash
 git clone --branch v0.1.0 --depth 1 \
-  https://github.com/echopath-labs/agent-delegation-kit.git
-codex plugin marketplace add /absolute/path/to/agent-delegation-kit --json
-codex plugin add agent-delegation-kit@agent-delegation-kit-local --json
-codex plugin list --marketplace agent-delegation-kit-local --json
+  https://github.com/echopath-labs/relaypact.git
+codex plugin marketplace add /absolute/path/to/relaypact --json
+codex plugin add relaypact@relaypact-local --json
+codex plugin list --marketplace relaypact-local --json
 ```
 
 安装后新建一个 Codex 任务，使打包的 Skill 出现在新任务的 Skill 列表中。
@@ -57,7 +57,7 @@ codex plugin list --marketplace agent-delegation-kit-local --json
 在新任务中使用：
 
 ```text
-请使用 $codex-delegated-execution 委派一个有明确边界的工程任务。
+请使用 $relaypact 委派一个有明确边界的工程任务。
 
 目标仓库：<绝对路径>
 目标：<明确的预期结果>
@@ -177,7 +177,7 @@ same-session correction。如果可读权限、可写路径、provider 路线、
 
 ## 这个流程不会自动做什么
 
-Agent Delegation Kit 不会替用户决定产品需求、提供凭据、批准更大权限、应用 patch、
+RelayPact 不会替用户决定产品需求、提供凭据、批准更大权限、应用 patch、
 commit、push、tag、发布 Release、发布包或部署。这些始终是明确的 host 或人类动作。
 
 本软件使用 [Apache License 2.0](../LICENSE)（`Apache-2.0`）。

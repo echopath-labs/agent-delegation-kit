@@ -1,15 +1,15 @@
-# Agent Delegation Kit
+# RelayPact
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Agent Delegation Kit 让协调 Agent 能够把边界明确的工程任务委派给独立执行
+RelayPact 让协调 Agent 能够把边界明确的工程任务委派给独立执行
 Agent，同时保留对范围、证据、风险判断和最终验收的控制。
 
 首个公开预览路线是 **Codex → Codex**：Codex 负责协调和审查，另一个可区分
 的 Codex Agent Instance 负责执行；在兼容的模型与 provider 路线中继续保留
 Codex harness。
 
-Agent Delegation Kit 提供委派流程、范围约束、执行隔离、证据收集和验收生命周期；
+RelayPact 提供委派流程、范围约束、执行隔离、证据收集和验收生命周期；
 真正执行任务的是用户机器上现有 Codex CLI 提供的独立 `codex exec` 进程。用户
 不需要安装第二套 Codex，也不需要单独安装 executor package。仅安装 Codex
 Desktop 不能证明 shell 已能调用兼容 CLI，因此安装时会同时验证
@@ -22,7 +22,7 @@ Desktop 不能证明 shell 已能调用兼容 CLI，因此安装时会同时验�
 ## 为什么需要它
 
 多 Agent 开发最容易在交接处失效：上下文不完整、写入权限含糊、把执行成功误当
-成验收通过，或无法独立核对结果。Agent Delegation Kit 将这个过程结构化为：
+成验收通过，或无法独立核对结果。RelayPact 将这个过程结构化为：
 
 - 明确可读、可写和禁止路径的 task envelope；
 - 脱敏的任务 capsule 与可区分的执行 Agent 身份；
@@ -66,7 +66,7 @@ provider 或特定模型。
 把下面的提示词交给一个协调 Codex：
 
 ```text
-请在 v0.1.0 发布后，把 https://github.com/echopath-labs/agent-delegation-kit 的
+请在 v0.1.0 发布后，把 https://github.com/echopath-labs/relaypact 的
 版本化 release tag 克隆到目标仓库之外的本地工具目录。该 tag 只是受信任官方仓库
 中的版本选择器，不是独立的密码学保证。如果我另行提供了从可信渠道获得的完整
 commit SHA，必须在安装前精确匹配。验证 Codex CLI 版本不低于 0.147.0
@@ -82,7 +82,7 @@ Codex-to-Codex readiness 和剩余配置。不要读取或复制凭据，不要�
 ### 2. 让安装后的 Skill 执行委派
 
 ```text
-请使用 $codex-delegated-execution 委派下面这个有明确边界的工程任务。
+请使用 $relaypact 委派下面这个有明确边界的工程任务。
 
 目标仓库：<绝对路径>
 目标：<需要完成的改动>
@@ -113,10 +113,10 @@ Codex-to-Codex readiness 和剩余配置。不要读取或复制凭据，不要�
 
 ```bash
 git clone --branch v0.1.0 --depth 1 \
-  https://github.com/echopath-labs/agent-delegation-kit.git
-codex plugin marketplace add /absolute/path/to/agent-delegation-kit --json
-codex plugin add agent-delegation-kit@agent-delegation-kit-local --json
-codex plugin list --marketplace agent-delegation-kit-local --json
+  https://github.com/echopath-labs/relaypact.git
+codex plugin marketplace add /absolute/path/to/relaypact --json
+codex plugin add relaypact@relaypact-local --json
+codex plugin list --marketplace relaypact-local --json
 ```
 
 安装后，Skill-local `support` 报告静态路线合同，`doctor` 在不读取认证、不连接
@@ -181,5 +181,5 @@ npm run check:codex-codex
 
 ## 开源协议
 
-Agent Delegation Kit 使用 [Apache License 2.0](LICENSE)（`Apache-2.0`），归属信息见
+RelayPact 使用 [Apache License 2.0](LICENSE)（`Apache-2.0`），归属信息见
 [NOTICE](NOTICE)。

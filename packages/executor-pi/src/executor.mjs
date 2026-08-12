@@ -400,7 +400,7 @@ export async function runExecutor(envelope, options) {
   const finish = (result) => attachExecutorSecurity(result, { sensitiveValues, credentialEvidenceTrusted });
   try {
     isolated = await createIsolatedEnvironment(environmentSource, {
-      prefix: "adk-pi-",
+      prefix: "relaypact-pi-",
       grants: { ...explicitGrants, GIT_OPTIONAL_LOCKS: "0" }
     });
     projection = await materializePiProjection({

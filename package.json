@@ -1,5 +1,5 @@
 {
-  "name": "agent-delegation-kit",
+  "name": "relaypact",
   "version": "0.1.0",
   "description": "Bounded, evidence-driven delegation between AI agents.",
   "type": "module",
@@ -12,7 +12,7 @@
     "node": ">=20"
   },
   "bin": {
-    "agent-delegation-kit": "./bin/agent-delegation-kit.mjs"
+    "relaypact": "./bin/relaypact.mjs"
   },
   "scripts": {
     "test": "npm run test:contracts && npm run test:core && npm run test:codex-codex && npm run test:codex-pi && npm run test:boundaries",

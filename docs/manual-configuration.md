@@ -18,7 +18,7 @@ does not authorize broader access or automatic patch application.
 
 Pi is required only for the explicitly selected experimental `codex-pi` route.
 
-Agent Delegation Kit supplies the delegation workflow, scope controls,
+RelayPact supplies the delegation workflow, scope controls,
 execution isolation, evidence, and acceptance lifecycle. The delegated executor
 is `codex exec` from the same Codex CLI installation. A second Codex installation
 or separate executor package is not required, but Codex Desktop alone does not
@@ -37,11 +37,11 @@ codex exec --help
 
 ```bash
 git clone --branch v0.1.0 --depth 1 \
-  https://github.com/echopath-labs/agent-delegation-kit.git
-cd agent-delegation-kit
+  https://github.com/echopath-labs/relaypact.git
+cd relaypact
 codex plugin marketplace add "$PWD" --json
-codex plugin add agent-delegation-kit@agent-delegation-kit-local --json
-codex plugin list --marketplace agent-delegation-kit-local --json
+codex plugin add relaypact@relaypact-local --json
+codex plugin list --marketplace relaypact-local --json
 ```
 
 The repository contains one Agent Plugins 1.0 root `plugin.json`. It has no
@@ -52,12 +52,12 @@ The repository contains one Agent Plugins 1.0 root `plugin.json`. It has no
 From a source clone:
 
 ```bash
-node ./bin/agent-delegation-kit.mjs support
-node ./bin/agent-delegation-kit.mjs doctor
+node ./bin/relaypact.mjs support
+node ./bin/relaypact.mjs doctor
 ```
 
 From an installed Skill, resolve
-`skills/codex-delegated-execution/scripts/agent-delegation-kit.mjs` relative to
+`skills/relaypact/scripts/relaypact.mjs` relative to
 the installed Skill directory. Do not assume the current directory is the
 plugin checkout.
 
@@ -77,10 +77,10 @@ when the user selects and invokes a route.
 ## Prepare private roots
 
 ```bash
-mkdir -p /absolute/private/agent-delegation-state
-mkdir -p /absolute/private/agent-delegation-archive
-chmod 700 /absolute/private/agent-delegation-state
-chmod 700 /absolute/private/agent-delegation-archive
+mkdir -p /absolute/private/relaypact-state
+mkdir -p /absolute/private/relaypact-archive
+chmod 700 /absolute/private/relaypact-state
+chmod 700 /absolute/private/relaypact-archive
 ```
 
 Do not place these directories inside the target repository or shared public
@@ -104,7 +104,7 @@ Important fields are:
 
 Never put a credential, authentication path, personal proxy value, or raw
 private log in an envelope. Context planning details are in the packaged
-Skill's [`context-planning.md`](../skills/codex-delegated-execution/references/context-planning.md).
+Skill's [`context-planning.md`](../skills/relaypact/references/context-planning.md).
 
 ## Prepare a worker profile registry
 
@@ -147,10 +147,10 @@ direct provider, Pi, OpenCode CLI, or another harness.
 ## Start a Codex-to-Codex task
 
 ```bash
-node ./bin/agent-delegation-kit.mjs run-codex \
+node ./bin/relaypact.mjs run-codex \
   --envelope /absolute/private/task-envelope.json \
   --profiles /absolute/private/worker-profiles.json \
-  --state-root /absolute/private/agent-delegation-state \
+  --state-root /absolute/private/relaypact-state \
   --host-instance coordinating-host-id
 ```
 
@@ -180,8 +180,8 @@ Do not infer acceptance from `executorSelfReport.status: "completed"`.
 Prepare a private text file containing only the correction and run:
 
 ```bash
-node ./bin/agent-delegation-kit.mjs correct-codex \
-  --task-root /absolute/private/agent-delegation-state/adk-task-id-uuid \
+node ./bin/relaypact.mjs correct-codex \
+  --task-root /absolute/private/relaypact-state/relaypact-task-id-uuid \
   --profiles /absolute/private/worker-profiles.json \
   --prompt /absolute/private/correction.txt
 ```
@@ -193,12 +193,12 @@ context or scope requires a new task.
 ## Record a terminal decision
 
 ```bash
-node ./bin/agent-delegation-kit.mjs decide-codex \
-  --task-root /absolute/private/agent-delegation-state/adk-task-id-uuid \
+node ./bin/relaypact.mjs decide-codex \
+  --task-root /absolute/private/relaypact-state/relaypact-task-id-uuid \
   --profiles /absolute/private/worker-profiles.json \
   --action accept \
   --actor reviewing-host-id \
-  --archive-root /absolute/private/agent-delegation-archive
+  --archive-root /absolute/private/relaypact-archive
 ```
 
 Use `reject` or `abandon` when appropriate. The command rebuilds authoritative
@@ -247,11 +247,11 @@ be rewritten for a plugin upgrade.
 Remove the installed plugin first, then remove the local marketplace:
 
 ```bash
-codex plugin remove agent-delegation-kit@agent-delegation-kit-local --json
-codex plugin marketplace remove agent-delegation-kit-local --json
+codex plugin remove relaypact@relaypact-local --json
+codex plugin marketplace remove relaypact-local --json
 ```
 
-Start a new Codex task and confirm that `$codex-delegated-execution` is no
+Start a new Codex task and confirm that `$relaypact` is no
 longer available. Deleting the cloned tools directory is a separate filesystem
 action.
 
@@ -267,8 +267,8 @@ These private archives remain user-owned data.
 | `codex` not found | Ensure a supported Codex CLI is installed and callable on `PATH`; Codex Desktop presence alone is insufficient. |
 | Codex version below 0.147.0 | Upgrade Codex CLI, open a new shell/task, and rerun `doctor`. |
 | `codex exec` unavailable | Repair or upgrade the Codex CLI installation; no separate executor package exists. |
-| `doctor` returns `needs_setup` | Add the release checkout as `agent-delegation-kit-local`, install the plugin, start a new task, and rerun doctor from the installed Skill. |
-| Plugin installed but Skill absent | Start a new Codex task and verify `codex plugin list --marketplace agent-delegation-kit-local --json`. |
+| `doctor` returns `needs_setup` | Add the release checkout as `relaypact-local`, install the plugin, start a new task, and rerun doctor from the installed Skill. |
+| Plugin installed but Skill absent | Start a new Codex task and verify `codex plugin list --marketplace relaypact-local --json`. |
 | Native authentication unavailable | Repair the selected host Codex profile; never paste credentials into envelope/profile files. |
 | Dirty target repository | Record and explicitly acknowledge every pre-existing path, or restore a clean tree before delegation. |
 | No approved worker profile | Let the coordinating Agent prepare credential-free metadata and stop for route/auth availability decisions. |
@@ -308,7 +308,7 @@ these directories in a public repository or publicly synchronized folder.
 Pi remains an explicit experimental route and is not loaded by `run-codex`:
 
 ```bash
-node ./bin/agent-delegation-kit.mjs run-pi \
+node ./bin/relaypact.mjs run-pi \
   --envelope /absolute/private/pi-task-envelope.json
 ```
 
@@ -329,7 +329,7 @@ npm pack --dry-run
 Plugin discovery uses an isolated home and no ambient credential:
 
 ```bash
-ADK_CODEX_PLUGIN_SMOKE=1 npm run smoke:codex-plugin
+RELAYPACT_CODEX_PLUGIN_SMOKE=1 npm run smoke:codex-plugin
 ```
 
 Live Codex, direct-provider, router, and Pi smokes are opt-in. They may consume
@@ -350,5 +350,5 @@ See [SECURITY.md](../SECURITY.md),
 [`codex-codex` adapter reference](../packages/adapter-codex-codex/README.md) for
 the full threat, lifecycle, and library boundaries.
 
-Agent Delegation Kit is licensed under the
+RelayPact is licensed under the
 [Apache License 2.0](../LICENSE) (`Apache-2.0`).

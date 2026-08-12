@@ -11,7 +11,7 @@ import { runDelegation } from "../packages/adapter-codex-pi/src/run-delegation.m
 import { createDirectory, createGitRepository, makeEnvelope } from "./helpers.mjs";
 
 const fakePi = fileURLToPath(new URL("./fixtures/fake-pi.mjs", import.meta.url));
-const cli = fileURLToPath(new URL("../bin/agent-delegation-kit.mjs", import.meta.url));
+const cli = fileURLToPath(new URL("../bin/relaypact.mjs", import.meta.url));
 const execFileAsync = promisify(execFile);
 const withFixturePiRoute = (envelope) => envelope.executionProfile === undefined
   ? { ...envelope, executionProfile: { provider: "fixture-provider", model: "fixture-model" } }
