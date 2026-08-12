@@ -2,7 +2,7 @@
 
 All notable public changes to RelayPact are recorded here.
 
-## [0.1.0] - Unreleased Public Preview
+## [0.1.0] - 2026-08-13 - Public Preview
 
 ### Added
 
