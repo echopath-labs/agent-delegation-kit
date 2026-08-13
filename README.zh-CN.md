@@ -34,7 +34,7 @@ Desktop 不能证明 shell 已能调用兼容 CLI，因此安装时会同时验�
 
 ## 当前状态
 
-版本 **0.1.0** 是受控、由人类审查的 Public Preview 候选版本，不适合无人值守
+版本 **0.1.1** 是受控、由人类审查的 Public Preview 候选版本，不适合无人值守
 或生产关键任务。
 
 | Adapter | Execution harness | 状态 | Root Skill |
@@ -66,9 +66,12 @@ provider 或特定模型。
 把下面的提示词交给一个协调 Codex：
 
 ```text
-请在 v0.1.0 发布后，把 https://github.com/echopath-labs/relaypact 的
+请在 v0.1.1 发布后，把 https://github.com/echopath-labs/relaypact 的
 版本化 release tag 克隆到目标仓库之外的本地工具目录。该 tag 只是受信任官方仓库
-中的版本选择器，不是独立的密码学保证。如果我另行提供了从可信渠道获得的完整
+中的版本选择器，不是独立的密码学保证。必须要求 clone 成功退出，并验证 checkout
+的 HEAD 与 annotated v0.1.1 tag peel 后得到的 commit 完全一致。浅克隆 annotated
+tag 时 Git 可能在 peel 过程中输出 warning；不能只凭 warning 文本判断成功或失败。
+如果我另行提供了从可信渠道获得的完整
 commit SHA，必须在安装前精确匹配。验证 Codex CLI 版本不低于 0.147.0
 并确认 `codex exec` 可用，通过仓库自带的 local marketplace 安装根 Agent
 Plugin，再执行安装后 Skill-local 的 `support` 和 `doctor` 命令。向我报告
@@ -90,7 +93,8 @@ Codex-to-Codex readiness 和剩余配置。不要读取或复制凭据，不要�
 开始前先检查支持状态，并读取目标仓库最近的 Agent 指令。先向我展示建议的
 可读路径、可写路径、禁止路径、验证命令、worker 路线，以及私有 state/archive
 目录，再开始执行。所有 envelope 或 profile 元数据只能写入目标仓库之外的私有
-目录，绝不能把凭据写入这些文件。如果权限、路线、验证或最终验收存在关键歧义，
+目录。只读文件应放入可读路径、从可写路径中省略，并且不能同时放入禁止路径。
+绝不能把凭据写入这些文件。如果权限、路线、验证或最终验收存在关键歧义，
 先停下来由我决定。没有单独授权时，不要应用 patch、commit、push、tag、发布
 或部署。
 ```
@@ -112,8 +116,12 @@ Codex-to-Codex readiness 和剩余配置。不要读取或复制凭据，不要�
 如果 Agent 需要精确命令，应使用：
 
 ```bash
-git clone --branch v0.1.0 --depth 1 \
+set -e
+git clone --branch v0.1.1 --depth 1 \
   https://github.com/echopath-labs/relaypact.git
+checkout_commit="$(git -C relaypact rev-parse HEAD)"
+release_commit="$(git -C relaypact rev-parse 'v0.1.1^{}')"
+test "$checkout_commit" = "$release_commit"
 codex plugin marketplace add /absolute/path/to/relaypact --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
@@ -122,6 +130,11 @@ codex plugin list --marketplace relaypact-local --json
 安装后，Skill-local `support` 报告静态路线合同，`doctor` 在不读取认证、不连接
 provider、不启动 worker 的前提下检查本机 runtime 与 plugin readiness。独立
 `codex exec` 会产生独立模型请求，可能额外消耗额度或费用。
+
+Host review 会把 `relaypactPromptBytes`、`relaypactResultSchemaBytes`、
+`relaypactDeclaredInputBytes`、选中上下文字节和 provider 报告的 token 用量分开记录。
+RelayPact 字节数不包含不可见的 Codex/provider harness 输入，也不是 token、额度、
+费用或额外开销估算。
 
 项目使用 Agent Plugins 1.0 根目录 `plugin.json`，有意不提供
 `.codex-plugin/plugin.json`，也不包含 MCP server。

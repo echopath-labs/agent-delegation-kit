@@ -46,6 +46,7 @@ export async function recordTerminalDecision(prepared, review, action, actor, op
   }
   const authoritativeReview = await buildHostReviewPacket(prepared, {
     workerResult: review.packet.executorSelfReport,
+    relaypactInput: null,
     usage: null,
     eventCount: 0,
     lifecycleError: null

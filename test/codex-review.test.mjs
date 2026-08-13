@@ -91,7 +91,40 @@ test("host review separates worker claims, observed evidence, and validation", a
   assert.equal(review.packet.validations[0].status, "passed");
   assert.equal(review.packet.acceptance.status, "pending");
   assert.equal(review.packet.acceptance.eligible, true);
+  assert.equal(review.packet.metrics.relaypactDeclaredInputBytes, fixture.execution.relaypactInput.relaypactDeclaredInputBytes);
   assert.match(review.candidatePatch, /bounded change/);
+});
+
+test("terminal review rebuild preserves HMAC-bound RelayPact input metrics", async () => {
+  const fixture = await executeFixture();
+  await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), "bounded change\n");
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution);
+  const decided = await recordTerminalDecision(fixture.prepared, review, "accept", "desktop-host-1");
+  assert.deepEqual(
+    {
+      relaypactPromptBytes: decided.packet.metrics.relaypactPromptBytes,
+      relaypactResultSchemaBytes: decided.packet.metrics.relaypactResultSchemaBytes,
+      relaypactDeclaredInputBytes: decided.packet.metrics.relaypactDeclaredInputBytes
+    },
+    fixture.execution.relaypactInput
+  );
+});
+
+test("host review prefers HMAC-bound input metrics over caller-supplied execution values", async () => {
+  const fixture = await executeFixture();
+  await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), "bounded change\n");
+  const review = await buildHostReviewPacket(fixture.prepared, {
+    ...fixture.execution,
+    relaypactInput: {
+      relaypactPromptBytes: 1,
+      relaypactResultSchemaBytes: 1,
+      relaypactDeclaredInputBytes: 2
+    }
+  });
+  assert.equal(
+    review.packet.metrics.relaypactDeclaredInputBytes,
+    fixture.execution.relaypactInput.relaypactDeclaredInputBytes
+  );
 });
 
 test("host-observed scope breach makes completion ineligible", async () => {
@@ -349,7 +382,13 @@ test("metrics keep only bounded aggregates and mark unavailable usage", () => {
     profile: { fingerprint: "sha256:1234567890abcdef9999" },
     execution: {
       eventCount: 2,
-      usage: { input_tokens: 8, prompt: "secret prompt", sourcePath: path.join(path.sep, "private", "source"), apiKey: "secret" }
+      usage: { input_tokens: 8, prompt: "secret prompt", sourcePath: path.join(path.sep, "private", "source"), apiKey: "secret" },
+      relaypactInput: {
+        relaypactPromptBytes: 1200,
+        relaypactResultSchemaBytes: 800,
+        relaypactDeclaredInputBytes: 2000,
+        prompt: "must not be retained"
+      }
     },
     contextEvidence: {
       plan: {
@@ -367,6 +406,9 @@ test("metrics keep only bounded aggregates and mark unavailable usage", () => {
   });
   assert.equal(metrics.inputTokens, 8);
   assert.equal(metrics.outputTokens, "unavailable");
+  assert.equal(metrics.relaypactPromptBytes, 1200);
+  assert.equal(metrics.relaypactResultSchemaBytes, 800);
+  assert.equal(metrics.relaypactDeclaredInputBytes, 2000);
   assert.equal(metrics.durationMs, "unavailable");
   assert.equal(metrics.contextMode, "planned");
   assert.equal(metrics.selectedFileCount, 4);
@@ -374,7 +416,40 @@ test("metrics keep only bounded aggregates and mark unavailable usage", () => {
   assert.equal(metrics.contextBlockCategory, "executor_context_gap");
   assert.equal(metrics.newTaskRequired, true);
   const serialized = JSON.stringify(metrics);
-  assert.doesNotMatch(serialized, /secret prompt|sourcePath|apiKey|private\/task|private-path|raw readiness|private\/secret/);
+  assert.doesNotMatch(serialized, /secret prompt|must not be retained|sourcePath|apiKey|private\/task|private-path|raw readiness|private\/secret/);
+});
+
+test("metrics do not infer missing RelayPact byte counts from provider tokens or context", () => {
+  const metrics = extractAggregateMetrics({
+    taskId: "task",
+    profile: { fingerprint: "sha256:1234567890abcdef9999" },
+    execution: { eventCount: 1, usage: { input_tokens: 86_580 } },
+    contextEvidence: { plan: { mode: "explicit", selectedFileCount: 4, selectedBytes: 1126 } }
+  });
+  assert.equal(metrics.inputTokens, 86_580);
+  assert.equal(metrics.selectedBytes, 1126);
+  assert.equal(metrics.relaypactPromptBytes, "unavailable");
+  assert.equal(metrics.relaypactResultSchemaBytes, "unavailable");
+  assert.equal(metrics.relaypactDeclaredInputBytes, "unavailable");
+});
+
+test("metrics reject non-integer and unsafe RelayPact byte observations", () => {
+  const metrics = extractAggregateMetrics({
+    taskId: "task",
+    profile: { fingerprint: "sha256:1234567890abcdef9999" },
+    execution: {
+      eventCount: 1,
+      usage: {},
+      relaypactInput: {
+        relaypactPromptBytes: 1.5,
+        relaypactResultSchemaBytes: Number.MAX_SAFE_INTEGER + 1,
+        relaypactDeclaredInputBytes: -1
+      }
+    }
+  });
+  assert.equal(metrics.relaypactPromptBytes, "unavailable");
+  assert.equal(metrics.relaypactResultSchemaBytes, "unavailable");
+  assert.equal(metrics.relaypactDeclaredInputBytes, "unavailable");
 });
 
 test("host review keeps executor context gaps separate from readiness and validation", async () => {

@@ -93,7 +93,8 @@ export async function executeCodexDelegation(prepared, options = {}) {
   try {
     const state = await recordWorkerResult(prepared.statePath, {
       threadId: execution.threadId,
-      result: execution.workerResult
+      result: execution.workerResult,
+      relaypactInput: execution.relaypactInput ?? null
     });
     return { ...execution, state };
   } catch (error) {
@@ -134,7 +135,8 @@ export async function correctCodexDelegation(prepared, correction, options = {})
   }, options);
   const state = await recordWorkerResult(prepared.statePath, {
     threadId: execution.threadId,
-    result: execution.workerResult
+    result: execution.workerResult,
+    relaypactInput: execution.relaypactInput ?? null
   });
   return { ...execution, state };
 }

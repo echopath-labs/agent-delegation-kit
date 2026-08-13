@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const CANONICAL_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 const PROJECT_NAME = "relaypact";
 const PROJECT_DISPLAY_NAME = "RelayPact";
+const PROJECT_VERSION = "0.1.1";
 const PROJECT_LICENSE = "Apache-2.0";
 const PROJECT_REPOSITORY = "https://github.com/echopath-labs/relaypact";
 const PROJECT_MARKETPLACE = "relaypact-local";
@@ -83,6 +84,7 @@ function validateManifest(manifest, errors) {
   }
   if (manifest.$schema !== CANONICAL_SCHEMA) errors.push("plugin.json must target Agent Plugins 1.0.0.");
   if (manifest.name !== PROJECT_NAME) errors.push(`plugin.json name must remain ${PROJECT_NAME}.`);
+  if (manifest.version !== PROJECT_VERSION) errors.push(`plugin.json version must remain ${PROJECT_VERSION}.`);
   if (manifest.homepage !== PROJECT_REPOSITORY || manifest.repository !== PROJECT_REPOSITORY) {
     errors.push(`plugin.json repository identities must remain ${PROJECT_REPOSITORY}.`);
   }
@@ -135,9 +137,9 @@ async function validateProjectOnboarding(root, errors) {
 
   const sharedReadmeFacts = [
     PROJECT_DISPLAY_NAME, PROJECT_REPOSITORY, PROJECT_MARKETPLACE,
-    "0.1.0", "codex-codex", "public-preview", "Codex CLI 0.147.0",
+    "0.1.1", "codex-codex", "public-preview", "Codex CLI 0.147.0",
     "Node.js 20", "Apache License 2.0", "SECURITY.md",
-    "docs/manual-configuration.md", "codex exec --help", "v0.1.0",
+    "docs/manual-configuration.md", "codex exec --help", "v0.1.1",
     "doctor"
   ];
   requireText(files["README.md"], [
@@ -147,7 +149,9 @@ async function validateProjectOnboarding(root, errors) {
     "$relaypact",
     "NOTICE",
     "No additional executor installation is required.",
-    "not an independent cryptographic guarantee"
+    "not an independent cryptographic guarantee",
+    "git -C relaypact rev-parse 'v0.1.1^{}'",
+    "relaypactDeclaredInputBytes"
   ], "README.md", errors);
   requireText(files["README.zh-CN.md"], [
     ...sharedReadmeFacts,
@@ -156,7 +160,9 @@ async function validateProjectOnboarding(root, errors) {
     "$relaypact",
     "NOTICE",
     "不需要额外安装 executor。",
-    "不是独立的密码学保证"
+    "不是独立的密码学保证",
+    "git -C relaypact rev-parse 'v0.1.1^{}'",
+    "relaypactDeclaredInputBytes"
   ], "README.zh-CN.md", errors);
 
   for (const relative of ["docs/agent-quickstart.md", "docs/agent-quickstart.zh-CN.md"]) {
@@ -170,9 +176,11 @@ async function validateProjectOnboarding(root, errors) {
       "Apache License 2.0",
       "codex exec",
       "doctor",
-      "v0.1.0",
+      "v0.1.1",
       "patch",
-      "commit SHA"
+      "commit SHA",
+      "git -C relaypact rev-parse 'v0.1.1^{}'",
+      "relaypactDeclaredInputBytes"
     ], relative, errors);
   }
   requireText(files["docs/agent-quickstart.md"], [
@@ -194,10 +202,11 @@ async function validateProjectOnboarding(root, errors) {
   ], "skills/relaypact/references/agent-setup.md", errors);
 
   requireText(files["docs/manual-configuration.md"], [
-    "v0.1.0", "doctor", "needs_setup", "codex exec --help",
+    "v0.1.1", "doctor", "needs_setup", "codex exec --help",
     "Apply an accepted candidate separately", "Upgrade a release installation",
     "## Uninstall", "private archives", "additional tokens", "## Glossary",
-    "not an independent cryptographic guarantee", "separate trusted channel"
+    "not an independent cryptographic guarantee", "separate trusted channel",
+    "git rev-parse 'v0.1.1^{}'", "relaypactDeclaredInputBytes"
   ], "docs/manual-configuration.md", errors);
 
   requireText(files["CONTRIBUTING.md"], [PROJECT_LICENSE, "Section 5"], "CONTRIBUTING.md", errors);
@@ -212,6 +221,7 @@ async function validateProjectOnboarding(root, errors) {
   try {
     const packageManifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
     if (packageManifest.name !== PROJECT_NAME) errors.push(`package.json name must be ${PROJECT_NAME}.`);
+    if (packageManifest.version !== PROJECT_VERSION) errors.push(`package.json version must be ${PROJECT_VERSION}.`);
     if (packageManifest.license !== PROJECT_LICENSE) errors.push(`package.json license must be ${PROJECT_LICENSE}.`);
     if (packageManifest.bin?.[PROJECT_NAME] !== "./bin/relaypact.mjs" || Object.keys(packageManifest.bin ?? {}).length !== 1) {
       errors.push("package.json must expose only the canonical relaypact CLI binary.");

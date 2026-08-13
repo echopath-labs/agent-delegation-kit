@@ -32,10 +32,14 @@ find secrets or broaden its own authority.
 Give Codex this prompt before the plugin is installed:
 
 ```text
-After v0.1.0 is published, clone its versioned release tag from
+After v0.1.1 is published, clone its versioned release tag from
 https://github.com/echopath-labs/relaypact into a local tools
 directory outside my target repository. Treat that tag as a version selector
 from the trusted official repository. It is not an independent cryptographic guarantee.
+Require the clone to exit successfully and verify that HEAD exactly equals the
+commit produced by peeling the annotated v0.1.1 tag. A shallow clone may print
+a warning while peeling an annotated tag; warning text alone is not the success
+or failure signal.
 If I provide a separately trusted full commit SHA, require an exact
 match before installation. Read its README and nearest AGENTS.md.
 Verify Codex CLI 0.147.0 or later and `codex exec`, install its root Agent
@@ -49,8 +53,12 @@ contact a provider, start an executor, commit, push, tag, publish, or deploy.
 The Agent should run the equivalent of:
 
 ```bash
-git clone --branch v0.1.0 --depth 1 \
+set -e
+git clone --branch v0.1.1 --depth 1 \
   https://github.com/echopath-labs/relaypact.git
+checkout_commit="$(git -C relaypact rev-parse HEAD)"
+release_commit="$(git -C relaypact rev-parse 'v0.1.1^{}')"
+test "$checkout_commit" = "$release_commit"
 codex plugin marketplace add /absolute/path/to/relaypact --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
@@ -107,7 +115,9 @@ The Agent separates:
 - `forbiddenPaths`: explicit exclusions;
 - host validation: direct argument arrays run independently after execution.
 
-Readable authority is not writable authority. A context change after execution
+For a read-only file, include it in `readablePaths`, omit it from
+`allowedPaths`, and do not also match it with `forbiddenPaths`. Readable
+authority is not writable authority. A context change after execution
 starts requires a new task identity, not a silent expansion of a correction.
 
 ### 3. Route selection
@@ -148,6 +158,12 @@ is only self-report. The coordinating host separately checks:
 - residual risks and lifecycle identity.
 
 The Agent should summarize this evidence before presenting a decision.
+
+Review metrics keep `relaypactPromptBytes`,
+`relaypactResultSchemaBytes`, `relaypactDeclaredInputBytes`, selected context
+bytes, and provider-reported tokens separate. RelayPact byte counts cover only
+the exact prompt and generated result schema it supplies; they are not token,
+quota, cost, hidden-harness, or overhead estimates.
 
 ### 6. Terminal decision
 

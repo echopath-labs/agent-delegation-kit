@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "relaypact",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Contract-first bounded delegation from Codex to an independent Codex executor, with isolated future Agent adapters.",
   "author": {
     "name": "EchoPath Labs",

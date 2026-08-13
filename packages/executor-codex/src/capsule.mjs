@@ -141,8 +141,14 @@ async function fileMetadata(root, relative, forbiddenPatterns, maximumBytes) {
   if (GLOB_CHARACTER.test(relative)) {
     throw new DelegationError("unsafe_capsule_input", `Readable inputs must be literal paths: ${relative}.`);
   }
-  if (isPrivate(relative) || forbiddenPatterns.some((pattern) => pattern.test(relative))) {
-    throw new DelegationError("unsafe_capsule_input", `Readable input is private or forbidden: ${relative}.`);
+  if (isPrivate(relative)) {
+    throw new DelegationError("unsafe_capsule_input", `Readable input is private: ${relative}.`);
+  }
+  if (forbiddenPatterns.some((pattern) => pattern.test(relative))) {
+    throw new DelegationError(
+      "unsafe_capsule_input",
+      `Readable input is also forbidden: ${relative}. Express read-only access by keeping the path in readablePaths, omitting it from allowedPaths, and removing it from forbiddenPaths.`
+    );
   }
   const absolute = path.resolve(root, relative);
   let resolved;

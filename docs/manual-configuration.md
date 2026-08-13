@@ -36,8 +36,12 @@ codex exec --help
 ## Install the root plugin
 
 ```bash
-git clone --branch v0.1.0 --depth 1 \
+set -e
+git clone --branch v0.1.1 --depth 1 \
   https://github.com/echopath-labs/relaypact.git
+checkout_commit="$(git -C relaypact rev-parse HEAD)"
+release_commit="$(git -C relaypact rev-parse 'v0.1.1^{}')"
+test "$checkout_commit" = "$release_commit"
 cd relaypact
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
@@ -101,6 +105,10 @@ Important fields are:
 - `validation`: host-owned argument arrays and timeouts;
 - `executionProfile`: name from the private profile registry;
 - `execution.timeoutMs` and `execution.exposureMode`.
+
+For a read-only file, include it in `scope.readablePaths`, omit it from
+`scope.allowedPaths`, and do not also match it with `scope.forbiddenPaths`.
+Contradictory readable/forbidden authority is rejected before worker launch.
 
 Never put a credential, authentication path, personal proxy value, or raw
 private log in an envelope. Context planning details are in the packaged
@@ -171,9 +179,15 @@ Inspect, at minimum:
   private-control status, and credential-evidence safety;
 - host validation status and bounded output;
 - acceptance eligibility and unresolved risks;
+- `metrics.relaypactPromptBytes`, `relaypactResultSchemaBytes`, and
+  `relaypactDeclaredInputBytes`, kept separate from selected context bytes and
+  provider-reported tokens;
 - the actual candidate patch stored beside the review packet.
 
 Do not infer acceptance from `executorSelfReport.status: "completed"`.
+RelayPact-declared byte metrics cover only the exact worker prompt and generated
+result schema supplied by RelayPact. They do not measure hidden Codex/provider
+harness input and are not token, quota, cost, or overhead estimates.
 
 ## Request a same-session correction
 
@@ -227,9 +241,13 @@ Never apply an unreviewed or stale archive automatically.
 
 ## Upgrade a release installation
 
-The `v0.1.0` instructions use a local marketplace backed by a versioned release
+The `v0.1.1` instructions use a local marketplace backed by a versioned release
 tag checkout. A tag from the trusted official repository is a version selector,
-not an independent cryptographic guarantee. If your organization distributes a
+not an independent cryptographic guarantee. A shallow clone of an annotated tag
+may print a warning while Git peels the tag object. Treat the install checkout as
+selected only when the clone exits successfully and `git rev-parse HEAD` equals
+`git rev-parse 'v0.1.1^{}'`; warning text alone is not the success signal. If
+your organization distributes a
 full commit SHA through a separate trusted channel, compare it exactly with
 `git rev-parse HEAD` and stop before installation on any mismatch. For a later
 release, clone that new tag into a separate tools directory, remove and re-add

@@ -67,6 +67,9 @@
   "unresolvedRisks": [],
   "metrics": {
     "requestCount": 1,
+    "relaypactPromptBytes": 2048,
+    "relaypactResultSchemaBytes": 4096,
+    "relaypactDeclaredInputBytes": 6144,
     "inputTokens": "unavailable",
     "outputTokens": "unavailable"
   },

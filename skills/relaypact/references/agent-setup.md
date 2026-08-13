@@ -51,6 +51,10 @@ Show the user or host:
   review archive;
 - any decision that cannot be safely inferred.
 
+For every read-only file, keep it in `readablePaths`, omit it from
+`allowedPaths`, and ensure it does not match `forbiddenPaths`. Do not start the
+executor with contradictory readable and forbidden authority.
+
 Do not start the executor while material scope, validation, route, credential
 availability, or reserved terminal authority is ambiguous.
 
@@ -82,8 +86,9 @@ worker profile but must not contain:
 - private workspace notes;
 - authority not shown in the pre-execution proposal.
 
-Keep readable and writable authority separate. Prefer the smallest focused
-dependency closure. If context discovery is uncertain, use bounded planned
+Keep readable and writable authority separate. Read-only context is readable,
+not writable, and not forbidden. Prefer the smallest focused dependency
+closure. If context discovery is uncertain, use bounded planned
 context and readiness rather than granting the complete repository by default.
 
 ## 6. Prepare or select a worker profile

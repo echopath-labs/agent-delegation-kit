@@ -127,6 +127,7 @@ test("readiness uses non-shell argv and rejects credential-like arguments", () =
 test("public JSON schemas are parseable and expose strict context contracts", async () => {
   const taskSchema = JSON.parse(await readFile(path.join(packageRoot, "packages/contracts/schemas/task-envelope.schema.json"), "utf8"));
   const manifestSchema = JSON.parse(await readFile(path.join(packageRoot, "packages/contracts/schemas/context-manifest.schema.json"), "utf8"));
+  const reviewSchema = JSON.parse(await readFile(path.join(packageRoot, "packages/contracts/schemas/host-review-packet.schema.json"), "utf8"));
   assert.equal(taskSchema.$schema, "https://json-schema.org/draft/2020-12/schema");
   assert.equal(taskSchema.additionalProperties, false);
   assert.equal(taskSchema.properties.contextPlanning.additionalProperties, false);
@@ -155,4 +156,9 @@ test("public JSON schemas are parseable and expose strict context contracts", as
   assert.equal(manifestSchema.$defs.readiness.properties.argv, undefined);
   assert.equal(manifestSchema.$defs.readiness.properties.commandFingerprint.pattern, "^sha256:[a-f0-9]{64}$");
   assert.equal(manifestSchema.properties.fingerprint.pattern, "^sha256:[a-f0-9]{64}$");
+  for (const field of ["relaypactPromptBytes", "relaypactResultSchemaBytes", "relaypactDeclaredInputBytes"]) {
+    assert.equal(reviewSchema.properties.metrics.properties[field].oneOf[0].type, "integer");
+    assert.equal(reviewSchema.properties.metrics.properties[field].oneOf[0].minimum, 0);
+    assert.equal(reviewSchema.properties.metrics.properties[field].oneOf[1].const, "unavailable");
+  }
 });

@@ -124,6 +124,7 @@ export async function validateArchitecture(rootInput) {
     try {
       const manifest = JSON.parse(await readFile(path.join(root, "packages", directory, "package.json"), "utf8"));
       if (manifest.name !== expectedName) errors.push(`packages/${directory} has unexpected package name.`);
+      if (manifest.version !== rootPackage.version) errors.push(`packages/${directory} version must match the monorepo root version.`);
       if (manifest.private !== true || manifest.type !== "module") {
         errors.push(`packages/${directory} must be a private ESM package.`);
       }

@@ -47,6 +47,7 @@ test("installed Skill exposes Agent-led private setup without optional route pre
   assert.match(skill, /credential-free envelope and\s+profile registry outside the target repository/u);
   assert.match(setup, /readablePaths/u);
   assert.match(setup, /allowedPaths/u);
+  assert.match(setup, /Read-only context is readable,\s+not writable, and not forbidden/u);
   assert.match(setup, /Route failure is fail-closed/u);
   assert.match(setup, /Never substitute another provider, model, router,\s+Pi, OpenCode CLI, OpenCodex/u);
 });
@@ -101,7 +102,7 @@ test("public package rejects first-use readiness and lifecycle guidance drift", 
   const quickStartPath = path.join(root, "docs", "agent-quickstart.md");
   await writeFile(
     quickStartPath,
-    (await readFile(quickStartPath, "utf8")).replaceAll("v0.1.0", "the latest branch")
+    (await readFile(quickStartPath, "utf8")).replaceAll("v0.1.1", "the latest branch")
   );
   const manualPath = path.join(root, "docs", "manual-configuration.md");
   await writeFile(
@@ -114,9 +115,41 @@ test("public package rejects first-use readiness and lifecycle guidance drift", 
   assert(errors.some((item) => item.includes("README.md must include \"codex exec --help\"")));
   assert(errors.some((item) => item.includes("README.md must include \"No additional executor installation is required.\"")));
   assert(errors.some((item) => item.includes("README.md must include \"not an independent cryptographic guarantee\"")));
-  assert(errors.some((item) => item.includes("docs/agent-quickstart.md must include \"v0.1.0\"")));
+  assert(errors.some((item) => item.includes("docs/agent-quickstart.md must include \"v0.1.1\"")));
   assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"## Uninstall\"")));
   assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"## Glossary\"")));
+  await rm(root, { recursive: true });
+});
+
+test("public package rejects peeled release identity and RelayPact metric guidance drift", async () => {
+  const root = await copyCurrentPublicPackage();
+  for (const relative of [
+    "README.md",
+    "README.zh-CN.md",
+    "docs/agent-quickstart.md",
+    "docs/agent-quickstart.zh-CN.md"
+  ]) {
+    const target = path.join(root, ...relative.split("/"));
+    await writeFile(
+      target,
+      (await readFile(target, "utf8"))
+        .replaceAll("git -C relaypact rev-parse 'v0.1.1^{}'", "printf unknown-tag")
+        .replaceAll("relaypactDeclaredInputBytes", "declared bytes")
+    );
+  }
+  const manual = path.join(root, "docs", "manual-configuration.md");
+  await writeFile(
+    manual,
+    (await readFile(manual, "utf8"))
+      .replaceAll("git rev-parse 'v0.1.1^{}'", "printf unknown-tag")
+      .replaceAll("relaypactDeclaredInputBytes", "declared bytes")
+  );
+  const errors = await validatePackage(root);
+  assert(errors.some((item) => item.includes("README.md must include \"git -C relaypact rev-parse 'v0.1.1^{}'\"")));
+  assert(errors.some((item) => item.includes("README.zh-CN.md must include \"relaypactDeclaredInputBytes\"")));
+  assert(errors.some((item) => item.includes("docs/agent-quickstart.md must include \"git -C relaypact rev-parse 'v0.1.1^{}'\"")));
+  assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"git rev-parse 'v0.1.1^{}'\"")));
+  assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"relaypactDeclaredInputBytes\"")));
   await rm(root, { recursive: true });
 });
 
@@ -161,6 +194,20 @@ test("architecture validation rejects Codex-to-Pi coupling", async () => {
   await writeFile(target, "import '../../executor-pi/src/executor.mjs';\n");
   const errors = await validateArchitecture(root);
   assert(errors.some((item) => item.includes("couples the Codex route")));
+  await rm(root, { recursive: true });
+});
+
+test("architecture validation rejects workspace package version drift", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "relaypact-architecture-"));
+  await cp(path.join(packageRoot, "packages"), path.join(root, "packages"), { recursive: true });
+  await cp(path.join(packageRoot, "package.json"), path.join(root, "package.json"));
+  await cp(path.join(packageRoot, "support-matrix.json"), path.join(root, "support-matrix.json"));
+  const manifestPath = path.join(root, "packages", "executor-pi", "package.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.version = "0.1.0";
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const errors = await validateArchitecture(root);
+  assert(errors.some((item) => item.includes("packages/executor-pi version must match the monorepo root version")));
   await rm(root, { recursive: true });
 });
 

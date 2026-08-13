@@ -251,6 +251,7 @@ test("controller executes and resumes correction in the same delegated session",
   });
   assert.equal(first.state.lifecycleState, "awaiting_review");
   assert.equal(first.state.executorThreadId, "delegated-thread-1");
+  assert.equal(first.state.relaypactInput.relaypactDeclaredInputBytes, first.relaypactInput.relaypactDeclaredInputBytes);
 
   const reloaded = await loadCodexDelegation(prepared.capsule.taskRoot, profileRegistry);
   const corrected = await correctCodexDelegation(reloaded, {
@@ -268,6 +269,7 @@ test("controller executes and resumes correction in the same delegated session",
   assert.equal(corrected.state.lifecycleState, "awaiting_review");
   assert.equal(corrected.state.executorThreadId, "delegated-thread-1");
   assert.equal(corrected.state.correctionSequence, 1);
+  assert.equal(corrected.state.relaypactInput.relaypactDeclaredInputBytes, corrected.relaypactInput.relaypactDeclaredInputBytes);
 });
 
 test("correction refuses a changed worker sensitive-value set before invoking Codex", async () => {

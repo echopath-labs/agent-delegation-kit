@@ -397,6 +397,15 @@ test("task state rejects path-like correction sequences and unknown fields", asy
   await assert.rejects(readTaskState(statePath), (error) => error.code === "task_state_unavailable");
   await writeFile(statePath, JSON.stringify({ ...state, unexpected: true }));
   await assert.rejects(readTaskState(statePath), (error) => error.code === "task_state_unavailable");
+  await writeFile(statePath, JSON.stringify({
+    ...state,
+    relaypactInput: {
+      relaypactPromptBytes: 10,
+      relaypactResultSchemaBytes: 5,
+      relaypactDeclaredInputBytes: 99
+    }
+  }));
+  await assert.rejects(readTaskState(statePath), (error) => error.code === "task_state_unavailable");
 });
 
 test("concurrent correction authorization cannot overwrite task lifecycle state", async () => {
