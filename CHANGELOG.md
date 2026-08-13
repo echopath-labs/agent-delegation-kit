@@ -2,6 +2,30 @@
 
 All notable public changes to RelayPact are recorded here.
 
+## [0.1.1] - Unreleased Public Preview
+
+### Changed
+
+- Clarified read-only task authority: a read-only file belongs in
+  `readablePaths`, is omitted from writable `allowedPaths`, and must not also
+  match `forbiddenPaths`. Contradictions now fail before worker launch with an
+  actionable diagnostic.
+- Added bounded `relaypactPromptBytes`, `relaypactResultSchemaBytes`, and
+  `relaypactDeclaredInputBytes` review metrics, kept separate from selected
+  context bytes and provider-reported token usage. Prompt and result-schema
+  measurement each fail closed above a 4 MiB input bound; the three integers are
+  HMAC-bound to private lifecycle state so terminal review preserves them.
+- Made Agent-first installation verify the checked-out commit against the
+  peeled annotated release tag and explained that shallow-clone warning text
+  alone is not the success signal.
+
+### Compatibility
+
+- Codex-to-Codex remains the only active Public Preview route. Pi remains
+  experimental and inactive at root Plugin activation.
+- The new review metrics are additive. No provider, model, router, credential,
+  dependency, or execution-authority requirement changed.
+
 ## [0.1.0] - 2026-08-13 - Public Preview
 
 ### Added
@@ -100,4 +124,5 @@ All notable public changes to RelayPact are recorded here.
 - npm distribution is not part of this preview; installation is from a cloned
   GitHub repository through the packaged local marketplace.
 
+[0.1.1]: https://github.com/echopath-labs/relaypact/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/echopath-labs/relaypact/releases/tag/v0.1.0

@@ -37,7 +37,7 @@ Executor completion is never final acceptance.
 
 ## Status
 
-Version **0.1.0** is a controlled, human-reviewed Public Preview candidate. It
+Version **0.1.1** is a controlled, human-reviewed Public Preview candidate. It
 is not intended for unattended or production-critical execution.
 
 | Adapter | Execution harness | Status | Root Skill |
@@ -70,10 +70,14 @@ approve material authority; you do not need to hand-write task JSON.
 Give a coordinating Codex instance this prompt:
 
 ```text
-After v0.1.0 is published, clone its versioned release tag from
+After v0.1.1 is published, clone its versioned release tag from
 https://github.com/echopath-labs/relaypact into a local tools
 directory outside my target repository. Treat that tag as a version selector
 from the trusted official repository. It is not an independent cryptographic guarantee.
+Require the clone to exit successfully and verify that the checked-out HEAD is
+exactly the commit produced by peeling the annotated v0.1.1 tag. A shallow clone
+may print a warning while peeling an annotated tag; warning text alone is not
+the success or failure signal.
 If I provide a separately trusted full commit SHA, require an exact
 match before installation. Verify Codex CLI 0.147.0 or later and
 `codex exec`, install the root Agent Plugin through the repository's local
@@ -97,6 +101,8 @@ Goal: <what should change>
 First inspect support and the repository's nearest agent instructions. Propose
 the readable paths, writable paths, forbidden paths, validation commands,
 worker route, and private state/archive locations before starting execution.
+For a read-only file, put it in readable paths, omit it from writable paths,
+and do not also put it in forbidden paths.
 Create any envelope or profile metadata only in a private directory outside the
 target repository. Never write credentials into those files. Stop for my
 decision if authority, route, validation, or final acceptance is ambiguous.
@@ -123,8 +129,12 @@ available for debugging and automation authors.
 If an Agent needs the exact underlying commands, they are:
 
 ```bash
-git clone --branch v0.1.0 --depth 1 \
+set -e
+git clone --branch v0.1.1 --depth 1 \
   https://github.com/echopath-labs/relaypact.git
+checkout_commit="$(git -C relaypact rev-parse HEAD)"
+release_commit="$(git -C relaypact rev-parse 'v0.1.1^{}')"
+test "$checkout_commit" = "$release_commit"
 codex plugin marketplace add /absolute/path/to/relaypact --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
@@ -135,6 +145,11 @@ contract and `doctor` checks local runtime and plugin readiness without reading
 authentication, contacting a provider, or starting a worker. Independent
 `codex exec` calls use model capacity separately from the coordinating Agent
 and may consume additional quota or cost.
+
+Host review reports `relaypactPromptBytes`, `relaypactResultSchemaBytes`, and
+`relaypactDeclaredInputBytes` separately from selected context bytes and
+provider-reported token usage. RelayPact byte counts do not include hidden Codex
+or provider harness input and are not token, quota, cost, or overhead estimates.
 
 The package uses the Agent Plugins 1.0 root `plugin.json`. It intentionally has
 no `.codex-plugin/plugin.json` and no MCP server.

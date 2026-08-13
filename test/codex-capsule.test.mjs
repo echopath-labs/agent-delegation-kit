@@ -136,6 +136,27 @@ test("all readable inputs are preflighted before state mutation", async () => {
   assert.deepEqual(await readdir(fixture.stateRoot), []);
 });
 
+test("readable paths that are also forbidden fail with actionable read-only guidance", async () => {
+  const fixture = await setup({
+    scope: {
+      readablePaths: ["README.md"],
+      forbiddenPaths: ["README.md", ".env", ".env.*"]
+    }
+  });
+  await assert.rejects(
+    preflightCapsule({ ...fixture, profile, workerResultSchemaPath }),
+    (error) => {
+      assert.equal(error.code, "unsafe_capsule_input");
+      assert.match(error.message, /Readable input is also forbidden: README\.md\./u);
+      assert.match(error.message, /keeping the path in readablePaths/u);
+      assert.match(error.message, /omitting it from allowedPaths/u);
+      assert.match(error.message, /removing it from forbiddenPaths/u);
+      return true;
+    }
+  );
+  assert.deepEqual(await readdir(fixture.stateRoot), []);
+});
+
 test("symlink and private inputs are rejected", async () => {
   const symlinkFixture = await setup({ scope: { readablePaths: ["linked.md"] } });
   await symlink(path.join(symlinkFixture.root, "README.md"), path.join(symlinkFixture.root, "linked.md"));

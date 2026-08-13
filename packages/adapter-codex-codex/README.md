@@ -90,7 +90,12 @@ credential itself in the variable named by the last setting, then run:
 npm run smoke:codex-direct
 ```
 
-The smoke retains only bounded review evidence and aggregate metrics. Do not
+The smoke retains only bounded review evidence and aggregate metrics. Review
+reports `relaypactPromptBytes`, `relaypactResultSchemaBytes`, and
+`relaypactDeclaredInputBytes` separately from selected context bytes and
+provider-reported tokens. These byte counts cover only RelayPact's exact worker
+prompt and generated result schema; they are not token, quota, cost,
+hidden-harness, or overhead estimates. Do not
 paste a credential value into any `RELAYPACT_DIRECT_*` setting, example, task envelope,
 or committed shell script.
 
@@ -121,6 +126,8 @@ budgets. A credential-free manifest records integrity and provenance. Optional
 readiness commands run in the provisional capsule before credentials, routing,
 lifecycle execution, or worker requests. Planning, readiness, and mutation
 failures clean the provisional task and never broaden exposure automatically.
+Read-only paths belong in `readablePaths`, must be omitted from writable
+`allowedPaths`, and must not also match `forbiddenPaths`.
 
 `trusted-worktree` creates a detached disposable Git worktree and requires
 `execution.trustedWorktreeAcknowledged: true`. It exposes the committed checkout

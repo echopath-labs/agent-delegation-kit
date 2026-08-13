@@ -29,9 +29,11 @@
 插件尚未安装时，把下面的提示词交给 Codex：
 
 ```text
-请在 v0.1.0 发布后，把 https://github.com/echopath-labs/relaypact 的
+请在 v0.1.1 发布后，把 https://github.com/echopath-labs/relaypact 的
 版本化 release tag 克隆到目标仓库之外的本地工具目录。该 tag 只是受信任官方仓库
-中的版本选择器，不是独立的密码学保证。如果我另行提供了从可信渠道获得的完整
+中的版本选择器，不是独立的密码学保证。必须要求 clone 成功退出，并验证 HEAD 与
+annotated v0.1.1 tag peel 后得到的 commit 完全一致。浅克隆 annotated tag 时可能
+输出 warning；不能只凭 warning 文本判断成功或失败。如果我另行提供了从可信渠道获得的完整
 commit SHA，必须在安装前精确匹配。读取 README 和最近的 AGENTS.md，
 验证 Codex CLI 不低于 0.147.0 且 `codex exec` 可用，通过 local marketplace
 安装根 Agent Plugin，然后运行安装后 Skill 的 `support` 和 `doctor`。向我报告
@@ -43,8 +45,12 @@ CLI 版本、`codex exec`、plugin 与 Skill discovery、Codex-to-Codex readines
 Agent 应执行等价的底层命令：
 
 ```bash
-git clone --branch v0.1.0 --depth 1 \
+set -e
+git clone --branch v0.1.1 --depth 1 \
   https://github.com/echopath-labs/relaypact.git
+checkout_commit="$(git -C relaypact rev-parse HEAD)"
+release_commit="$(git -C relaypact rev-parse 'v0.1.1^{}')"
+test "$checkout_commit" = "$release_commit"
 codex plugin marketplace add /absolute/path/to/relaypact --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
@@ -95,7 +101,8 @@ Agent 必须区分：
 - `forbiddenPaths`：明确禁止的路径；
 - host validation：执行完成后由 host 以参数数组方式独立运行的验证。
 
-可读权限不等于可写权限。执行开始后如果需要改变上下文，必须创建新任务身份，
+只读文件应放入 `readablePaths`、从 `allowedPaths` 中省略，并且不能同时被
+`forbiddenPaths` 匹配。可读权限不等于可写权限。执行开始后如果需要改变上下文，必须创建新任务身份，
 不能在 correction 中静默扩大范围。
 
 ### 3. 路线选择
@@ -132,6 +139,11 @@ Coordinating host 还必须独立检查：
 - 剩余风险和 lifecycle identity。
 
 Agent 应先解释这些证据，再给出决策选项。
+
+Review metrics 会将 `relaypactPromptBytes`、
+`relaypactResultSchemaBytes`、`relaypactDeclaredInputBytes`、选中上下文字节与
+provider 报告的 token 分开记录。RelayPact 字节数只覆盖它实际提供的 prompt 和
+生成的 result schema，不是 token、额度、费用、隐藏 harness 输入或额外开销估算。
 
 ### 6. 终态决策
 

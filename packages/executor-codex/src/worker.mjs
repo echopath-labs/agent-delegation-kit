@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { chmod, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { chmod, lstat, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { minimalEnvironment } from "../../core/src/environment.mjs";
@@ -27,6 +28,8 @@ const SAFE_TOP_LEVEL_CONFIG = new Set(["model", "model_provider", "model_reasoni
 const SAFE_PROFILE_CONFIG = new Set(["model", "model_provider", "model_reasoning_effort", "disable_response_storage"]);
 const SAFE_PROVIDER_CONFIG = new Set(["name", "base_url", "env_key", "wire_api", "request_max_retries", "stream_max_retries", "stream_idle_timeout_ms", "websocket_connect_timeout_ms"]);
 const MAX_WORKER_RESULT_BYTES = 4 * 1024 * 1024;
+const MAX_RELAYPACT_PROMPT_BYTES = 4 * 1024 * 1024;
+const MAX_RELAYPACT_RESULT_SCHEMA_BYTES = 4 * 1024 * 1024;
 
 function parseSnapshotString(line, key, profileName) {
   const match = line.match(new RegExp(`^\\s*${key}\\s*=\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*')\\s*(?:#.*)?$`, "u"));
@@ -384,6 +387,35 @@ export function buildCodexExecInvocation({ envelope, profile, capsule, resultPat
   return { command: profile.codexCommand, args, input: promptFor(envelope, correction) };
 }
 
+async function measureRelaypactDeclaredInput(invocation, resultSchemaPath) {
+  const relaypactPromptBytes = Buffer.byteLength(invocation.input, "utf8");
+  if (!Number.isSafeInteger(relaypactPromptBytes) || relaypactPromptBytes > MAX_RELAYPACT_PROMPT_BYTES) {
+    throw new DelegationError("relaypact_input_too_large", "The RelayPact worker prompt exceeds the declared-input byte bound.");
+  }
+
+  let handle;
+  try {
+    handle = await open(resultSchemaPath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    const info = await handle.stat();
+    if (!info.isFile() || !Number.isSafeInteger(info.size) || info.size < 0) {
+      throw new DelegationError("relaypact_input_unavailable", "The RelayPact result schema is not a measurable regular file.");
+    }
+    if (info.size > MAX_RELAYPACT_RESULT_SCHEMA_BYTES) {
+      throw new DelegationError("relaypact_input_too_large", "The RelayPact result schema exceeds the declared-input byte bound.");
+    }
+    return {
+      relaypactPromptBytes,
+      relaypactResultSchemaBytes: info.size,
+      relaypactDeclaredInputBytes: relaypactPromptBytes + info.size
+    };
+  } catch (error) {
+    if (error instanceof DelegationError) throw error;
+    throw new DelegationError("relaypact_input_unavailable", "The RelayPact result schema could not be measured safely.");
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
 export function parseCodexEventStream(stdout, options = {}) {
   const sensitiveValues = Array.isArray(options.sensitiveValues) ? options.sensitiveValues : [];
   let threadId = null;
@@ -461,6 +493,14 @@ export async function runCodexWorker({ envelope, profile, capsule, statePath = n
     const message = error instanceof DelegationError ? error.message : "The delegated worker environment could not be prepared.";
     return { threadId: correction?.threadId ?? null, terminalState: "failed", usage: null, eventCount: 0, workerResult: failedWorkerResult(envelope.taskId, code, message) };
   }
+  let relaypactInput;
+  try {
+    relaypactInput = await measureRelaypactDeclaredInput(invocation, capsule.resultSchemaPath);
+  } catch (error) {
+    const code = error instanceof DelegationError ? error.code : "relaypact_input_unavailable";
+    const message = error instanceof DelegationError ? error.message : "RelayPact declared input could not be measured safely.";
+    return { threadId: correction?.threadId ?? null, terminalState: "failed", usage: null, eventCount: 0, workerResult: failedWorkerResult(envelope.taskId, code, message) };
+  }
   let processResult;
   try {
     processResult = await runner(invocation.command, invocation.args, {
@@ -471,7 +511,7 @@ export async function runCodexWorker({ envelope, profile, capsule, statePath = n
       input: invocation.input
     });
   } catch {
-    return { threadId: correction?.threadId ?? null, terminalState: "failed", usage: null, eventCount: 0, workerResult: failedWorkerResult(envelope.taskId, "codex_start_failed", "The configured Codex executable could not be started.") };
+    return { threadId: correction?.threadId ?? null, terminalState: "failed", usage: null, eventCount: 0, relaypactInput, workerResult: failedWorkerResult(envelope.taskId, "codex_start_failed", "The configured Codex executable could not be started.") };
   }
 
   if (statePath) {
@@ -493,6 +533,7 @@ export async function runCodexWorker({ envelope, profile, capsule, statePath = n
         terminalState: "failed",
         usage: null,
         eventCount: 0,
+        relaypactInput,
         workerResult: failedWorkerResult(
           envelope.taskId,
           cleanupVerified ? "sensitive_grant_changed" : "sensitive_evidence_cleanup_failed",
@@ -510,6 +551,7 @@ export async function runCodexWorker({ envelope, profile, capsule, statePath = n
       terminalState: "failed",
       usage: null,
       eventCount: 0,
+      relaypactInput,
       workerResult: failedWorkerResult(envelope.taskId, "codex_output_truncated", "Codex output exceeded the evidence capture bound.")
     };
   }
@@ -518,19 +560,20 @@ export async function runCodexWorker({ envelope, profile, capsule, statePath = n
   try {
     events = parseCodexEventStream(processResult.stdout, { sensitiveValues });
   } catch (error) {
-    return { threadId: correction?.threadId ?? null, terminalState: "failed", usage: null, eventCount: 0, workerResult: failedWorkerResult(envelope.taskId, error.code, error.message) };
+    return { threadId: correction?.threadId ?? null, terminalState: "failed", usage: null, eventCount: 0, relaypactInput, workerResult: failedWorkerResult(envelope.taskId, error.code, error.message) };
   }
   const threadId = events.threadId ?? correction?.threadId ?? null;
-  if (!threadId) return { ...events, workerResult: failedWorkerResult(envelope.taskId, "executor_identity_unavailable", "Codex did not emit a delegated thread identity.") };
+  if (!threadId) return { ...events, relaypactInput, workerResult: failedWorkerResult(envelope.taskId, "executor_identity_unavailable", "Codex did not emit a delegated thread identity.") };
   if (correction && events.threadId && events.threadId !== correction.threadId) {
-    return { ...events, threadId: events.threadId, workerResult: failedWorkerResult(envelope.taskId, "executor_identity_mismatch", "Codex resumed a different delegated thread.") };
+    return { ...events, threadId: events.threadId, relaypactInput, workerResult: failedWorkerResult(envelope.taskId, "executor_identity_mismatch", "Codex resumed a different delegated thread.") };
   }
-  if (processResult.timedOut) return { ...events, threadId, workerResult: failedWorkerResult(envelope.taskId, "codex_timeout", "The delegated Codex turn timed out.") };
-  if (processResult.signal) return { ...events, threadId, workerResult: failedWorkerResult(envelope.taskId, "codex_interrupted", "The delegated Codex turn was interrupted.") };
+  if (processResult.timedOut) return { ...events, threadId, relaypactInput, workerResult: failedWorkerResult(envelope.taskId, "codex_timeout", "The delegated Codex turn timed out.") };
+  if (processResult.signal) return { ...events, threadId, relaypactInput, workerResult: failedWorkerResult(envelope.taskId, "codex_interrupted", "The delegated Codex turn was interrupted.") };
   if (processResult.exitCode !== 0 || events.terminalState !== "completed") {
     return {
       ...events,
       threadId,
+      relaypactInput,
       workerResult: failedWorkerResult(
         envelope.taskId,
         events.failure?.code ?? "codex_process_failed",
@@ -556,7 +599,7 @@ export async function runCodexWorker({ envelope, profile, capsule, statePath = n
     if (!options.readResultFile) await rm(resultPath, { force: true }).catch(() => {});
     const code = error instanceof DelegationError ? error.code : "malformed_worker_result";
     const message = error instanceof DelegationError ? error.message : "Codex produced malformed structured output.";
-    return { ...events, threadId, workerResult: failedWorkerResult(envelope.taskId, code, message) };
+    return { ...events, threadId, relaypactInput, workerResult: failedWorkerResult(envelope.taskId, code, message) };
   }
-  return { ...events, threadId, workerResult: parsed, resultPath };
+  return { ...events, threadId, relaypactInput, workerResult: parsed, resultPath };
 }

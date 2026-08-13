@@ -107,7 +107,29 @@
     },
     "validations": { "type": "array", "items": { "type": "object" } },
     "unresolvedRisks": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
-    "metrics": { "type": "object" },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "relaypactPromptBytes": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "const": "unavailable" }
+          ]
+        },
+        "relaypactResultSchemaBytes": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "const": "unavailable" }
+          ]
+        },
+        "relaypactDeclaredInputBytes": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "const": "unavailable" }
+          ]
+        }
+      }
+    },
     "reviewIdentity": {
       "type": "object",
       "additionalProperties": false,

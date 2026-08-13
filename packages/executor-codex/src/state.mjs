@@ -18,7 +18,7 @@ const STATE_KEYS = new Set([
   "schemaVersion", "taskId", "lifecycleState", "hostInstanceId", "executorThreadId",
   "profileName", "profileFingerprint", "capsuleBaseline", "contextManifestFingerprint",
   "privateControlFingerprint", "resultIdentity", "workerSensitiveGrantFingerprint",
-  "validationSensitiveGrantFingerprint", "correctionSequence", "stateRevision", "integrity"
+  "validationSensitiveGrantFingerprint", "relaypactInput", "correctionSequence", "stateRevision", "integrity"
 ]);
 const SENSITIVE_GRANT_FIELDS = {
   worker: "workerSensitiveGrantFingerprint",
@@ -28,6 +28,16 @@ const MAX_CORRECTION_SEQUENCE = 1_000_000;
 
 function nonemptyString(value) {
   return typeof value === "string" && value.trim().length > 0 && !value.includes("\0");
+}
+
+function validRelaypactInput(value) {
+  if (value === null) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const fields = ["relaypactPromptBytes", "relaypactResultSchemaBytes", "relaypactDeclaredInputBytes"];
+  if (Object.keys(value).some((key) => !fields.includes(key)) || fields.some((key) => !Number.isSafeInteger(value[key]) || value[key] < 0)) {
+    return false;
+  }
+  return value.relaypactDeclaredInputBytes === value.relaypactPromptBytes + value.relaypactResultSchemaBytes;
 }
 
 function canonicalize(value) {
@@ -104,6 +114,7 @@ export function validateTaskState(state) {
     !Object.hasOwn(TRANSITIONS, state.lifecycleState) ||
     requiredStrings.some((key) => !nonemptyString(state[key])) ||
     optionalStrings.some((key) => state[key] !== null && !nonemptyString(state[key])) ||
+    !validRelaypactInput(state.relaypactInput ?? null) ||
     [state.workerSensitiveGrantFingerprint, state.validationSensitiveGrantFingerprint]
       .some((value) => value !== null && !/^hmac-sha256:[a-f0-9]{64}$/u.test(value)) ||
     !Number.isSafeInteger(state.correctionSequence) ||
@@ -238,6 +249,7 @@ export async function createTaskState({ capsule, profile, hostInstanceId }) {
     resultIdentity: null,
     workerSensitiveGrantFingerprint: null,
     validationSensitiveGrantFingerprint: null,
+    relaypactInput: null,
     correctionSequence: 0,
     stateRevision: 0,
     integrity: "hmac-sha256:0000000000000000000000000000000000000000000000000000000000000000"
@@ -305,7 +317,7 @@ export async function transitionTaskStateMatching(statePath, next, expected, upd
   });
 }
 
-export async function recordWorkerResult(statePath, { threadId, result }) {
+export async function recordWorkerResult(statePath, { threadId, result, relaypactInput = null }) {
   return withTaskStateLock(statePath, async () => {
     const state = await readTaskStateUnlocked(statePath);
     if (typeof threadId !== "string" || threadId.trim().length === 0 || threadId === state.hostInstanceId) {
@@ -314,9 +326,13 @@ export async function recordWorkerResult(statePath, { threadId, result }) {
     if (state.executorThreadId !== null && state.executorThreadId !== threadId) {
       throw new DelegationError("executor_identity_mismatch", "The delegated Codex thread changed during the task lifecycle.");
     }
+    if (!validRelaypactInput(relaypactInput)) {
+      throw new DelegationError("relaypact_input_unavailable", "RelayPact declared-input evidence is missing or malformed.");
+    }
     return transitionUnlocked(statePath, state, "awaiting_review", {
       executorThreadId: threadId,
-      resultIdentity: resultIdentity(result)
+      resultIdentity: resultIdentity(result),
+      relaypactInput
     });
   });
 }

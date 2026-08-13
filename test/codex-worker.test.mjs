@@ -60,6 +60,8 @@ async function fixture() {
     baseline: "baseline-1",
     privateControlBaseline: { fingerprint: "sha256:private-control" }
   };
+  await mkdir(controlRoot, { recursive: true });
+  await writeFile(capsule.resultSchemaPath, '{"type":"object"}\n');
   const envelope = makeEnvelope(taskRoot, { executionProfile: profile.name });
   return { taskRoot, capsule, envelope };
 }
@@ -108,6 +110,12 @@ test("Codex worker starts without a shell and captures structured completion", a
   assert.equal(result.threadId, "worker-thread-1");
   assert.equal(result.workerResult.status, "completed");
   assert.deepEqual(result.usage, { input_tokens: 12, output_tokens: 4 });
+  assert.equal(result.relaypactInput.relaypactPromptBytes, Buffer.byteLength(observed.options.input, "utf8"));
+  assert.equal(result.relaypactInput.relaypactResultSchemaBytes, Buffer.byteLength('{"type":"object"}\n', "utf8"));
+  assert.equal(
+    result.relaypactInput.relaypactDeclaredInputBytes,
+    result.relaypactInput.relaypactPromptBytes + result.relaypactInput.relaypactResultSchemaBytes
+  );
 });
 
 test("direct provider home is private, deterministic, and does not inherit global auth", async () => {
@@ -462,6 +470,75 @@ test("correction invocation resumes the exact delegated thread", async () => {
   assert.ok(invocation.args.includes("worker-thread-1"));
   assert.equal(invocation.args.includes("--profile"), false);
   assert.match(invocation.input, /Correction request 1/);
+});
+
+test("correction execution measures the exact resumed prompt without retaining it in metrics", async () => {
+  const { capsule, envelope } = await fixture();
+  let input;
+  const result = await runCodexWorker({
+    envelope,
+    profile,
+    capsule,
+    correction: { threadId: "worker-thread-1", sequence: 1, prompt: "Fix the failing test." }
+  }, {
+    codexHome: path.join(capsule.taskRoot, "codex-home"),
+    runProcess: async (_command, _args, options) => {
+      input = options.input;
+      return {
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        stderr: "",
+        stdout: `${JSON.stringify({ type: "turn.completed", usage: {} })}\n`
+      };
+    },
+    readResultFile: async () => JSON.stringify(completedResult())
+  });
+  assert.match(input, /Correction request 1: Fix the failing test\./u);
+  assert.equal(result.relaypactInput.relaypactPromptBytes, Buffer.byteLength(input, "utf8"));
+  assert.doesNotMatch(JSON.stringify(result.relaypactInput), /Fix the failing test/u);
+});
+
+test("worker does not start when the generated result schema cannot be measured safely", async () => {
+  const { capsule, envelope } = await fixture();
+  let invoked = false;
+  await rm(capsule.resultSchemaPath);
+  const missing = await runCodexWorker({ envelope, profile, capsule }, {
+    codexHome: path.join(capsule.taskRoot, "codex-home"),
+    runProcess: async () => {
+      invoked = true;
+      throw new Error("must not run");
+    }
+  });
+  assert.equal(invoked, false);
+  assert.equal(missing.workerResult.blocking.code, "relaypact_input_unavailable");
+
+  await writeFile(capsule.resultSchemaPath, "x".repeat(4 * 1024 * 1024 + 1));
+  const oversized = await runCodexWorker({ envelope, profile, capsule }, {
+    codexHome: path.join(capsule.taskRoot, "codex-home"),
+    runProcess: async () => {
+      invoked = true;
+      throw new Error("must not run");
+    }
+  });
+  assert.equal(invoked, false);
+  assert.equal(oversized.workerResult.blocking.code, "relaypact_input_too_large");
+});
+
+test("worker does not start when the exact RelayPact prompt exceeds its byte bound", async () => {
+  const { capsule, envelope } = await fixture();
+  envelope.instructions = ["x".repeat(4 * 1024 * 1024)];
+  let invoked = false;
+  const result = await runCodexWorker({ envelope, profile, capsule }, {
+    codexHome: path.join(capsule.taskRoot, "codex-home"),
+    runProcess: async () => {
+      invoked = true;
+      throw new Error("must not run");
+    }
+  });
+  assert.equal(invoked, false);
+  assert.equal(result.workerResult.blocking.code, "relaypact_input_too_large");
+  assert.doesNotMatch(JSON.stringify(result), /x{100}/u);
 });
 
 test("event parsing rejects non-JSON output and worker failures remain structured", async () => {

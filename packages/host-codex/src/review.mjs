@@ -72,6 +72,10 @@ function unavailable(value) {
   return Number.isFinite(value) && value >= 0 ? value : "unavailable";
 }
 
+function boundedInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : "unavailable";
+}
+
 function usageValue(usage, ...keys) {
   for (const key of keys) {
     if (Number.isFinite(usage?.[key])) return usage[key];
@@ -138,6 +142,7 @@ function contextEvidenceFor(prepared, execution) {
 
 export function extractAggregateMetrics({ taskId, profile, execution, durationMs, contextEvidence = undefined }) {
   const usage = execution.usage;
+  const relaypactInput = execution.relaypactInput;
   const plan = contextEvidence?.plan;
   const readiness = contextEvidence?.readiness;
   return {
@@ -150,6 +155,9 @@ export function extractAggregateMetrics({ taskId, profile, execution, durationMs
     outputTokens: unavailable(usageValue(usage, "output_tokens", "outputTokens")),
     cachedInputTokens: unavailable(usageValue(usage, "cached_input_tokens", "cachedInputTokens")),
     reasoningTokens: unavailable(usageValue(usage, "reasoning_tokens", "reasoningTokens")),
+    relaypactPromptBytes: boundedInteger(relaypactInput?.relaypactPromptBytes),
+    relaypactResultSchemaBytes: boundedInteger(relaypactInput?.relaypactResultSchemaBytes),
+    relaypactDeclaredInputBytes: boundedInteger(relaypactInput?.relaypactDeclaredInputBytes),
     cost: "unavailable",
     contextMode: plan?.mode === "planned" ? "planned" : "explicit",
     contextStrategy: plan?.strategy === "dependency-closure" ? "dependency-closure" : plan?.mode === "planned" ? "unavailable" : "explicit",
@@ -245,7 +253,7 @@ function sanitizeValidationEvidence(results, sensitiveValues, suppressNarratives
 }
 
 export async function buildHostReviewPacket(prepared, execution, options = {}) {
-  const contextEvidence = contextEvidenceFor(prepared, execution);
+  let contextEvidence = contextEvidenceFor(prepared, execution);
   const validationEnv = Object.freeze(Object.fromEntries(Object.entries(options.validationEnv ?? {})));
   const validationSensitiveValues = Object.values(validationEnv)
     .filter((value) => typeof value === "string" && value.length > 0);
@@ -278,6 +286,9 @@ export async function buildHostReviewPacket(prepared, execution, options = {}) {
     collectCandidateEvidence(prepared.capsule, prepared.envelope.scope, candidateOptions),
     verifySourceUnchanged(prepared.repository, prepared.capsule)
   ]);
+  const relaypactInput = state.relaypactInput ?? execution.relaypactInput ?? null;
+  execution = { ...execution, relaypactInput };
+  contextEvidence = contextEvidenceFor(prepared, execution);
   const canValidate = execution.workerResult.status === "completed" &&
     evidence.baselineConsistent && evidence.scopeBreaches.length === 0 && source.unchanged;
   const privateControlBefore = canValidate
