@@ -32,7 +32,7 @@ find secrets or broaden its own authority.
 Give Codex this prompt before the plugin is installed:
 
 ```text
-After v0.1.1 is published, clone its versioned release tag from
+Clone the versioned `v0.1.1` release tag from
 https://github.com/echopath-labs/relaypact into a local tools
 directory outside my target repository. Treat that tag as a version selector
 from the trusted official repository. It is not an independent cryptographic guarantee.
