@@ -34,7 +34,7 @@ Desktop 不能证明 shell 已能调用兼容 CLI，因此安装时会同时验�
 
 ## 当前状态
 
-版本 **0.1.1** 是受控、由人类审查的 Public Preview 候选版本，不适合无人值守
+版本 **0.1.1** 是受控、由人类审查的 Public Preview，不适合无人值守
 或生产关键任务。
 
 | Adapter | Execution harness | 状态 | Root Skill |
@@ -66,8 +66,8 @@ provider 或特定模型。
 把下面的提示词交给一个协调 Codex：
 
 ```text
-请在 v0.1.1 发布后，把 https://github.com/echopath-labs/relaypact 的
-版本化 release tag 克隆到目标仓库之外的本地工具目录。该 tag 只是受信任官方仓库
+请把 https://github.com/echopath-labs/relaypact 的版本化 `v0.1.1` release tag
+克隆到目标仓库之外的本地工具目录。该 tag 只是受信任官方仓库
 中的版本选择器，不是独立的密码学保证。必须要求 clone 成功退出，并验证 checkout
 的 HEAD 与 annotated v0.1.1 tag peel 后得到的 commit 完全一致。浅克隆 annotated
 tag 时 Git 可能在 peel 过程中输出 warning；不能只凭 warning 文本判断成功或失败。

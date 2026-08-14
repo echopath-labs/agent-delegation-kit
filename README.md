@@ -37,7 +37,7 @@ Executor completion is never final acceptance.
 
 ## Status
 
-Version **0.1.1** is a controlled, human-reviewed Public Preview candidate. It
+Version **0.1.1** is a controlled, human-reviewed Public Preview. It
 is not intended for unattended or production-critical execution.
 
 | Adapter | Execution harness | Status | Root Skill |
@@ -70,7 +70,7 @@ approve material authority; you do not need to hand-write task JSON.
 Give a coordinating Codex instance this prompt:
 
 ```text
-After v0.1.1 is published, clone its versioned release tag from
+Clone the versioned `v0.1.1` release tag from
 https://github.com/echopath-labs/relaypact into a local tools
 directory outside my target repository. Treat that tag as a version selector
 from the trusted official repository. It is not an independent cryptographic guarantee.

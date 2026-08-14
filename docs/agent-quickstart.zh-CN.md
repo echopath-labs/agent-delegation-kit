@@ -29,8 +29,8 @@
 插件尚未安装时，把下面的提示词交给 Codex：
 
 ```text
-请在 v0.1.1 发布后，把 https://github.com/echopath-labs/relaypact 的
-版本化 release tag 克隆到目标仓库之外的本地工具目录。该 tag 只是受信任官方仓库
+请把 https://github.com/echopath-labs/relaypact 的版本化 `v0.1.1` release tag
+克隆到目标仓库之外的本地工具目录。该 tag 只是受信任官方仓库
 中的版本选择器，不是独立的密码学保证。必须要求 clone 成功退出，并验证 HEAD 与
 annotated v0.1.1 tag peel 后得到的 commit 完全一致。浅克隆 annotated tag 时可能
 输出 warning；不能只凭 warning 文本判断成功或失败。如果我另行提供了从可信渠道获得的完整
