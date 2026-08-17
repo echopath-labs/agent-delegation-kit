@@ -33,20 +33,52 @@ codex --version
 codex exec --help
 ```
 
-## Install the root plugin
+## Release state and version verification
+
+Public source currently reports version `0.1.1`, but `v0.1.1` is not
+released and its tag does not exist. The latest published release is
+`v0.1.0`. Never infer release availability from package or Plugin version
+fields alone.
+
+For current-source dogfood, clone the mutable `main` branch, record its exact
+commit, and verify aligned source metadata:
 
 ```bash
 set -e
-git clone --branch v0.1.1 --depth 1 \
-  https://github.com/echopath-labs/relaypact.git
-checkout_commit="$(git -C relaypact rev-parse HEAD)"
-release_commit="$(git -C relaypact rev-parse 'v0.1.1^{}')"
-test "$checkout_commit" = "$release_commit"
-cd relaypact
+git clone --branch main --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-0.1.1-source
+cd relaypact-0.1.1-source
+git rev-parse HEAD
+node -e 'const p=require("./package.json"),q=require("./plugin.json"); if(p.version!=="0.1.1"||q.version!==p.version) process.exit(1)'
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
 ```
+
+This is a development-source installation, not a reproducible release
+installation. If an organization supplies a full commit SHA through a separate trusted channel,
+compare it exactly with `git rev-parse HEAD` before Plugin registration.
+
+The latest published release remains available from `v0.1.0`:
+
+```bash
+git clone --branch v0.1.0 --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.0
+checkout_commit="$(git -C relaypact-v0.1.0 rev-parse HEAD)"
+release_commit="$(git -C relaypact-v0.1.0 rev-parse 'v0.1.0^{}')"
+test "$checkout_commit" = "$release_commit"
+cd relaypact-v0.1.0
+codex plugin marketplace add "$PWD" --json
+codex plugin add relaypact@relaypact-local --json
+codex plugin list --marketplace relaypact-local --json
+```
+
+An official repository tag is a version selector, not an independent cryptographic guarantee.
+The `v0.1.1` peeled-tag procedure becomes a valid
+release installation only after the separately authorized tag exists and is
+verified. See [RELEASING.md](../RELEASING.md).
+
+## Install the root plugin
 
 The repository contains one Agent Plugins 1.0 root `plugin.json`. It has no
 `.codex-plugin/plugin.json` and no MCP server.
@@ -185,6 +217,11 @@ Inspect, at minimum:
 - the actual candidate patch stored beside the review packet.
 
 Do not infer acceptance from `executorSelfReport.status: "completed"`.
+`completed` means the executor returned a candidate result; independent host
+review is still pending. `accept` is a later terminal decision and still does
+not change the source repository. `apply` is a third, separately authorized
+source mutation after the accepted archive and current source base are
+rechecked: `completed` != `accept` != `apply`.
 RelayPact-declared byte metrics cover only the exact worker prompt and generated
 result schema supplied by RelayPact. They do not measure hidden Codex/provider
 harness input and are not token, quota, cost, or overhead estimates.
@@ -239,22 +276,23 @@ separate approval before applying anything. Do not commit or push.
 Patch application, commit, push, and release remain distinct authorizations.
 Never apply an unreviewed or stale archive automatically.
 
-## Upgrade a release installation
+## Upgrade or replace an installation
 
-The `v0.1.1` instructions use a local marketplace backed by a versioned release
-tag checkout. A tag from the trusted official repository is a version selector,
-not an independent cryptographic guarantee. A shallow clone of an annotated tag
-may print a warning while Git peels the tag object. Treat the install checkout as
-selected only when the clone exits successfully and `git rev-parse HEAD` equals
-`git rev-parse 'v0.1.1^{}'`; warning text alone is not the success signal. If
-your organization distributes a
-full commit SHA through a separate trusted channel, compare it exactly with
-`git rev-parse HEAD` and stop before installation on any mismatch. For a later
-release, clone that new tag into a separate tools directory, remove and re-add
-the plugin against the new marketplace checkout, then start a new Codex task
-and run `support` plus `doctor` again. The Codex `marketplace upgrade` command
-refreshes Git-backed marketplaces; it does not change a local tag checkout
-automatically.
+Do not turn a mutable source checkout into a claimed release by editing version
+metadata or substituting a tag name. For another source candidate, clone the
+new source into a separate tools directory, record its exact commit, verify
+aligned package/Plugin versions, remove and re-add the local Plugin, then start
+a new Codex task and rerun `support` plus `doctor`.
+
+For a published release, first confirm the desired tag exists in the official
+repository. Clone it into a separate tools directory and require
+`git rev-parse HEAD` to equal the peeled tag commit. A shallow annotated-tag
+clone can print a warning while peeling; command success and object identity,
+not warning text, determine success. If a separately trusted full commit SHA is
+available, compare it exactly and stop before installation on mismatch.
+
+The Codex `marketplace upgrade` command refreshes Git-backed marketplaces; it
+does not convert a local source or tag checkout automatically.
 
 Do not overwrite an installation while an active task depends on its Skill
 files. Existing private task archives are versioned evidence and do not need to
@@ -285,7 +323,7 @@ These private archives remain user-owned data.
 | `codex` not found | Ensure a supported Codex CLI is installed and callable on `PATH`; Codex Desktop presence alone is insufficient. |
 | Codex version below 0.147.0 | Upgrade Codex CLI, open a new shell/task, and rerun `doctor`. |
 | `codex exec` unavailable | Repair or upgrade the Codex CLI installation; no separate executor package exists. |
-| `doctor` returns `needs_setup` | Add the release checkout as `relaypact-local`, install the plugin, start a new task, and rerun doctor from the installed Skill. |
+| `doctor` returns `needs_setup` | Add the intended source or release checkout as `relaypact-local`, install the plugin, start a new task, and rerun doctor from the installed Skill. |
 | Plugin installed but Skill absent | Start a new Codex task and verify `codex plugin list --marketplace relaypact-local --json`. |
 | Native authentication unavailable | Repair the selected host Codex profile; never paste credentials into envelope/profile files. |
 | Dirty target repository | Record and explicitly acknowledge every pre-existing path, or restore a clean tree before delegation. |

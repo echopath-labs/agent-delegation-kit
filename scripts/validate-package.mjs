@@ -8,6 +8,8 @@ const CANONICAL_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.
 const PROJECT_NAME = "relaypact";
 const PROJECT_DISPLAY_NAME = "RelayPact";
 const PROJECT_VERSION = "0.1.1";
+const PROJECT_RELEASE_STATE = "candidate";
+const LATEST_PUBLISHED_VERSION = "0.1.0";
 const PROJECT_LICENSE = "Apache-2.0";
 const PROJECT_REPOSITORY = "https://github.com/echopath-labs/relaypact";
 const PROJECT_MARKETPLACE = "relaypact-local";
@@ -120,6 +122,13 @@ function requireText(text, fragments, relative, errors) {
   }
 }
 
+function forbidText(text, fragments, relative, errors) {
+  if (text === null) return;
+  for (const fragment of fragments) {
+    if (text.includes(fragment)) errors.push(`${relative} must not include ${JSON.stringify(fragment)}.`);
+  }
+}
+
 async function validateProjectOnboarding(root, errors) {
   const files = Object.fromEntries(await Promise.all([
     "README.md",
@@ -138,9 +147,9 @@ async function validateProjectOnboarding(root, errors) {
   const sharedReadmeFacts = [
     PROJECT_DISPLAY_NAME, PROJECT_REPOSITORY, PROJECT_MARKETPLACE,
     "0.1.1", "codex-codex", "public-preview", "Codex CLI 0.147.0",
-    "Node.js 20", "Apache License 2.0", "SECURITY.md",
-    "docs/manual-configuration.md", "codex exec --help", "v0.1.1",
-    "doctor"
+    "Node.js 20", "Apache License 2.0", "SECURITY.md", "v0.1.1",
+    "v0.1.0", "docs/manual-configuration.md", "codex exec --help", "doctor",
+    "`completed` != `accept` != `apply`"
   ];
   requireText(files["README.md"], [
     ...sharedReadmeFacts,
@@ -149,8 +158,8 @@ async function validateProjectOnboarding(root, errors) {
     "$relaypact",
     "NOTICE",
     "No additional executor installation is required.",
-    "not an independent cryptographic guarantee",
-    "git -C relaypact rev-parse 'v0.1.1^{}'",
+    "not an independent", "cryptographic guarantee",
+    "git clone --branch main --depth 1",
     "relaypactDeclaredInputBytes"
   ], "README.md", errors);
   requireText(files["README.zh-CN.md"], [
@@ -161,34 +170,31 @@ async function validateProjectOnboarding(root, errors) {
     "NOTICE",
     "不需要额外安装 executor。",
     "不是独立的密码学保证",
-    "git -C relaypact rev-parse 'v0.1.1^{}'",
+    "git clone --branch main --depth 1",
     "relaypactDeclaredInputBytes"
   ], "README.zh-CN.md", errors);
 
+  const sharedQuickStartFacts = [
+    "$relaypact", "manual-configuration.md", "opencode-go-luna.md", "accept",
+    "reject", "abandon", "Apache License 2.0", "codex exec", "doctor",
+    "v0.1.1", "v0.1.0", "patch", "commit SHA",
+    "git clone --branch main --depth 1", "docs/relaypact-first-delegation.md",
+    "`completed` != `accept` != `apply`", "relaypactDeclaredInputBytes"
+  ];
   for (const relative of ["docs/agent-quickstart.md", "docs/agent-quickstart.zh-CN.md"]) {
-    requireText(files[relative], [
-      "$relaypact",
-      "manual-configuration.md",
-      "opencode-go-luna.md",
-      "accept",
-      "reject",
-      "abandon",
-      "Apache License 2.0",
-      "codex exec",
-      "doctor",
-      "v0.1.1",
-      "patch",
-      "commit SHA",
-      "git -C relaypact rev-parse 'v0.1.1^{}'",
-      "relaypactDeclaredInputBytes"
-    ], relative, errors);
+    requireText(files[relative], sharedQuickStartFacts, relative, errors);
+    forbidText(files[relative], ["run-pi", "git clone --branch v0.1.1"], relative, errors);
   }
   requireText(files["docs/agent-quickstart.md"], [
     "[简体中文](agent-quickstart.zh-CN.md)",
+    "5-minute Codex-to-Codex getting started",
+    "Pi is experimental and inactive",
     "quota or cost"
   ], "docs/agent-quickstart.md", errors);
   requireText(files["docs/agent-quickstart.zh-CN.md"], [
     "[English](agent-quickstart.md)",
+    "5 分钟 Codex-to-Codex 开始指南",
+    "Pi 是 experimental、inactive",
     "额度或费用"
   ], "docs/agent-quickstart.zh-CN.md", errors);
 
@@ -202,12 +208,51 @@ async function validateProjectOnboarding(root, errors) {
   ], "skills/relaypact/references/agent-setup.md", errors);
 
   requireText(files["docs/manual-configuration.md"], [
-    "v0.1.1", "doctor", "needs_setup", "codex exec --help",
-    "Apply an accepted candidate separately", "Upgrade a release installation",
+    "0.1.1", "v0.1.1", "v0.1.0", "doctor", "needs_setup", "codex exec --help",
+    "Release state and version verification", "git clone --branch main --depth 1",
+    "Apply an accepted candidate separately", "Upgrade or replace an installation",
     "## Uninstall", "private archives", "additional tokens", "## Glossary",
     "not an independent cryptographic guarantee", "separate trusted channel",
-    "git rev-parse 'v0.1.1^{}'", "relaypactDeclaredInputBytes"
+    "git -C relaypact-v0.1.0 rev-parse 'v0.1.0^{}'",
+    "`completed` != `accept` != `apply`", "relaypactDeclaredInputBytes"
   ], "docs/manual-configuration.md", errors);
+  requireText(files["RELEASING.md"], [
+    "0.1.1 release-time documentation closeout", "PROJECT_RELEASE_STATE",
+    "chasechou007", "human-supplied release date", "v0.1.1^{}",
+    "GitHub Release is visible before changing live `main`"
+  ], "RELEASING.md", errors);
+
+  const candidateOnboardingFiles = [
+    "README.md",
+    "README.zh-CN.md",
+    "docs/agent-quickstart.md",
+    "docs/agent-quickstart.zh-CN.md",
+    "docs/manual-configuration.md"
+  ];
+  if (PROJECT_RELEASE_STATE === "candidate") {
+    for (const relative of candidateOnboardingFiles) {
+      requireText(files[relative], ["source candidate", `v${LATEST_PUBLISHED_VERSION}`], relative, errors);
+      forbidText(files[relative], ["git clone --branch v0.1.1"], relative, errors);
+    }
+    requireText(files["README.md"], [
+      "Latest published release: **v0.1.0**",
+      "`v0.1.1` is not released"
+    ], "README.md", errors);
+    requireText(files["README.zh-CN.md"], [
+      "最新已发布版本：**v0.1.0**",
+      "`v0.1.1` 尚未发布"
+    ], "README.zh-CN.md", errors);
+  } else if (PROJECT_RELEASE_STATE === "released") {
+    for (const relative of candidateOnboardingFiles) {
+      requireText(files[relative], [
+        "git clone --branch v0.1.1",
+        "v0.1.1^{}"
+      ], relative, errors);
+    }
+    requireText(files["README.md"], ["Latest published release: **v0.1.1**"], "README.md", errors);
+  } else {
+    errors.push("scripts/validate-package.mjs PROJECT_RELEASE_STATE must be candidate or released.");
+  }
 
   requireText(files["CONTRIBUTING.md"], [PROJECT_LICENSE, "Section 5"], "CONTRIBUTING.md", errors);
   requireText(files["RELEASING.md"], [PROJECT_LICENSE, "NOTICE"], "RELEASING.md", errors);
