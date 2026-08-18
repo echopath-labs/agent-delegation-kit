@@ -8,9 +8,8 @@ Codex-to-Codex candidate。RelayPact 使用现有 Codex CLI 中的独立
 
 当前发布事实：
 
-- `0.1.1` 是尚未发布的 source candidate；`v0.1.1` tag 不存在。
-- `v0.1.0` 是最新已发布版本。
-- 本指南 dogfood development source，并记录它的精确 commit SHA。
+- `v0.1.1` 是最新已发布版本；`v0.1.0` 仍可使用。
+- 本指南安装版本化 tag，并验证 peel 后的 commit SHA。
 - Pi 是 experimental、inactive；本流程不会安装、加载或调用它。
 
 精确 CLI 与 JSON 字段见[手工配置参考](manual-configuration.md)。
@@ -29,14 +28,14 @@ codex exec --help
 仅安装 Codex Desktop 不能证明 CLI 或 `codex exec` 可用。独立 worker 会产生
 独立模型请求，可能额外消耗额度或费用。
 
-## 第 1 分钟：安装并验证 0.1.1 source candidate
+## 第 1 分钟：安装并验证 v0.1.1 release
 
 把下面的提示词交给协调 Codex：
 
 ```text
-请从 main 分支克隆 https://github.com/echopath-labs/relaypact 到目标仓库之外的
-本地工具目录。把它视为尚未发布的 0.1.1 development-source checkout，而不是
-版本化 release。记录精确 checkout commit SHA。确认 package.json 和 plugin.json
+请把 https://github.com/echopath-labs/relaypact 的版本化 v0.1.1 release tag
+克隆到目标仓库之外的本地工具目录。记录精确 checkout commit SHA，并将它与
+peel 后的 v0.1.1 tag commit 做精确比较。确认 package.json 和 plugin.json
 都报告 0.1.1；读取 README.md 和最近的 AGENTS.md；验证 Node.js 20+、Git、
 Codex CLI 0.147.0+ 和 `codex exec --help`。通过 local marketplace 安装根
 Plugin。在不读取凭据、不连接 provider、不启动 worker 的情况下，运行安装后
@@ -45,22 +44,30 @@ discovery、Codex-to-Codex readiness 和剩余配置。不要 accept、apply、c
 push、tag、publish、release 或 deploy。
 ```
 
-等价的 source 命令是：
+等价的 release 命令是：
 
 ```bash
-git clone --branch main --depth 1 \
-  https://github.com/echopath-labs/relaypact.git relaypact-0.1.1-source
-cd relaypact-0.1.1-source
-git rev-parse HEAD
+git clone --branch v0.1.1 --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.1
+checkout_commit="$(git -C relaypact-v0.1.1 rev-parse HEAD)"
+release_commit="$(git -C relaypact-v0.1.1 rev-parse 'v0.1.1^{}')"
+test "$checkout_commit" = "$release_commit"
+cd relaypact-v0.1.1
 node -e 'const p=require("./package.json"),q=require("./plugin.json"); if(p.version!=="0.1.1"||q.version!==p.version) process.exit(1)'
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
 ```
 
-`main` checkout 可变，所以不是可复现 release install。只有当 `v0.1.1` 存在且
-它 peel 后的 commit 已验证，官方 tag 路径才成立。官方 tag 只是版本选择器，
-不是独立的密码学保证。
+官方 tag 只是版本选择器，不是独立的密码学保证。如需 dogfood 当前源码，应使用
+单独的 development-only checkout、记录精确 commit，且绝不能把它描述为 release
+安装：
+
+```bash
+git clone --branch main --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-current-source
+git -C relaypact-current-source rev-parse HEAD
+```
 
 ## 第 2 分钟：新建 Codex 任务
 

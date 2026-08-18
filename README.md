@@ -15,9 +15,8 @@ CLI. No second Codex installation or executor package is required.
 
 ## Release status
 
-- Public source version: **0.1.1 release candidate** (`v0.1.1` is not released
-  and the tag does not exist yet).
-- Latest published release: **v0.1.0**.
+- Public source version: **0.1.1 Public Preview**.
+- Latest published release: **v0.1.1**.
 - Support: `codex-codex` is `public-preview`; `codex-pi` remains
   `experimental` and inactive.
 
@@ -32,19 +31,18 @@ and Codex CLI 0.147.0 or later with both `codex --version` and
 for a release only after its exact candidate passes public CI. Windows support
 is not yet claimed.
 
-## Five-minute start with the 0.1.1 source candidate
+## Five-minute start with the v0.1.1 release
 
-Use this path to dogfood current source before `v0.1.1` is released. A `main`
-checkout is mutable and is **development-only**, not a reproducible release
-installation.
+Use the versioned `v0.1.1` tag for a reproducible release installation.
 
 Give a coordinating Codex instance this prompt:
 
 ```text
-Clone https://github.com/echopath-labs/relaypact from branch main into a local
-tools directory outside my target repository. This is an unreleased 0.1.1
-development-source installation, not a versioned release. Record the exact
-checkout commit and verify that package.json and plugin.json both report 0.1.1.
+Clone the versioned v0.1.1 release tag from
+https://github.com/echopath-labs/relaypact into a local tools directory outside
+my target repository. Record the exact checkout commit, verify it against the
+peeled v0.1.1 tag commit, and verify that package.json and plugin.json both
+report 0.1.1.
 Read README.md and the nearest AGENTS.md. Verify Node.js 20 or later, Git,
 Codex CLI 0.147.0 or later, and `codex exec --help`. Install the root Agent
 Plugin through its local marketplace, start no worker, then run the installed
@@ -54,13 +52,15 @@ setup. Do not read credentials or configure, invoke, accept, apply, commit,
 push, tag, publish, release, or deploy anything.
 ```
 
-The equivalent source commands are:
+The equivalent release commands are:
 
 ```bash
-git clone --branch main --depth 1 \
-  https://github.com/echopath-labs/relaypact.git relaypact-0.1.1-source
-cd relaypact-0.1.1-source
-git rev-parse HEAD
+git clone --branch v0.1.1 --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.1
+checkout_commit="$(git -C relaypact-v0.1.1 rev-parse HEAD)"
+release_commit="$(git -C relaypact-v0.1.1 rev-parse 'v0.1.1^{}')"
+test "$checkout_commit" = "$release_commit"
+cd relaypact-v0.1.1
 node -e 'const p=require("./package.json"),q=require("./plugin.json"); if(p.version!=="0.1.1"||q.version!==p.version) process.exit(1)'
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
@@ -74,15 +74,17 @@ documentation file.
 
 ## Install the latest published release
 
-Today, the only published release is `v0.1.0`:
+The latest published release is `v0.1.1`:
+
+The previous `v0.1.0` release remains available for exact historical installs.
 
 ```bash
-git clone --branch v0.1.0 --depth 1 \
-  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.0
-checkout_commit="$(git -C relaypact-v0.1.0 rev-parse HEAD)"
-release_commit="$(git -C relaypact-v0.1.0 rev-parse 'v0.1.0^{}')"
+git clone --branch v0.1.1 --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.1
+checkout_commit="$(git -C relaypact-v0.1.1 rev-parse HEAD)"
+release_commit="$(git -C relaypact-v0.1.1 rev-parse 'v0.1.1^{}')"
 test "$checkout_commit" = "$release_commit"
-cd relaypact-v0.1.0
+cd relaypact-v0.1.1
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
@@ -90,8 +92,16 @@ codex plugin list --marketplace relaypact-local --json
 
 An official repository tag is a version selector, **not an independent
 cryptographic guarantee**. Compare a full commit SHA only when it came through
-a separate trusted channel. Do not substitute an absent `v0.1.1` tag into this
-command; [RELEASING.md](RELEASING.md) defines the release-time closeout.
+a separate trusted channel.
+
+To dogfood mutable current source instead, keep the development-only path
+distinct from the released installation and record its exact commit:
+
+```bash
+git clone --branch main --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-current-source
+git -C relaypact-current-source rev-parse HEAD
+```
 
 ## The lifecycle in one minute
 

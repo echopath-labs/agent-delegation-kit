@@ -8,7 +8,7 @@ const CANONICAL_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.
 const PROJECT_NAME = "relaypact";
 const PROJECT_DISPLAY_NAME = "RelayPact";
 const PROJECT_VERSION = "0.1.1";
-const PROJECT_RELEASE_STATE = "candidate";
+const PROJECT_RELEASE_STATE = "released";
 const LATEST_PUBLISHED_VERSION = "0.1.0";
 const PROJECT_LICENSE = "Apache-2.0";
 const PROJECT_REPOSITORY = "https://github.com/echopath-labs/relaypact";
@@ -183,7 +183,7 @@ async function validateProjectOnboarding(root, errors) {
   ];
   for (const relative of ["docs/agent-quickstart.md", "docs/agent-quickstart.zh-CN.md"]) {
     requireText(files[relative], sharedQuickStartFacts, relative, errors);
-    forbidText(files[relative], ["run-pi", "git clone --branch v0.1.1"], relative, errors);
+    forbidText(files[relative], ["run-pi"], relative, errors);
   }
   requireText(files["docs/agent-quickstart.md"], [
     "[简体中文](agent-quickstart.zh-CN.md)",
