@@ -2,7 +2,7 @@
 
 All notable public changes to RelayPact are recorded here.
 
-## [0.1.1] - 2026-08-13 - Public Preview
+## [Unreleased] - 0.1.1 release candidate
 
 ### Changed
 
@@ -124,5 +124,5 @@ All notable public changes to RelayPact are recorded here.
 - npm distribution is not part of this preview; installation is from a cloned
   GitHub repository through the packaged local marketplace.
 
-[0.1.1]: https://github.com/echopath-labs/relaypact/compare/v0.1.0...v0.1.1
+[Unreleased]: https://github.com/echopath-labs/relaypact/compare/v0.1.0...main
 [0.1.0]: https://github.com/echopath-labs/relaypact/releases/tag/v0.1.0

@@ -2,220 +2,146 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-RelayPact lets a coordinating Agent delegate bounded engineering
-work to an independent executor without delegating scope control, evidence
-review, risk judgment, or final acceptance.
+RelayPact lets one Codex Agent Instance delegate bounded engineering work to an
+independent Codex executor while the coordinating Codex retains scope, evidence
+review, risk judgment, and final acceptance.
 
-The first public-preview route is **Codex → Codex**. Codex coordinates and
-reviews an independent Codex Agent Instance while preserving the Codex harness
-across compatible model and provider routes.
+The first and only active Public Preview route is **Codex → Codex**. RelayPact
+provides the workflow, isolation, evidence, and acceptance controls; execution
+comes from an independent `codex exec` process in the user's existing Codex
+CLI. No second Codex installation or executor package is required.
 
-RelayPact provides the delegation workflow, scope controls,
-execution isolation, evidence collection, and acceptance lifecycle. The actual
-executor is an independent `codex exec` process supplied by the Codex CLI
-already installed on the user's machine. No second Codex installation or
-separate executor package is required. Codex Desktop alone does not prove that
-the compatible CLI is callable from the shell, so installation verifies both
-`codex --version` and `codex exec --help`.
+**No additional executor installation is required.**
 
-No additional executor installation is required.
+## Release status
 
-## Why
-
-Multi-Agent development usually fails at the handoff: context is incomplete,
-write authority is vague, executor success is mistaken for acceptance, or the
-result cannot be reviewed independently. RelayPact structures that
-handoff with:
-
-- a task envelope with explicit readable, writable, and forbidden paths;
-- a sanitized task capsule and distinguishable executor identity;
-- host-observed Git, filesystem, validation, and scope evidence;
-- credential-aware result and patch handling;
-- explicit host or human acceptance after execution.
-
-Executor completion is never final acceptance.
-
-## Status
-
-Version **0.1.1** is a controlled, human-reviewed Public Preview. It
-is not intended for unattended or production-critical execution.
-
-| Adapter | Execution harness | Status | Root Skill |
-| --- | --- | --- | --- |
-| `codex-codex` | Codex | `public-preview` | active |
-| `codex-pi` | Pi | `experimental` | inactive |
+- Public source version: **0.1.1 release candidate** (`v0.1.1` is not released
+  and the tag does not exist yet).
+- Latest published release: **v0.1.0**.
+- Support: `codex-codex` is `public-preview`; `codex-pi` remains
+  `experimental` and inactive.
 
 [`support-matrix.json`](support-matrix.json) is authoritative. Pi, OpenCode CLI,
-OpenCodex, a third-party provider, and a particular model are not prerequisites
-for the default Codex-to-Codex route.
+OpenCodex, a third-party provider, and any particular model are not prerequisites
+or fallbacks for the Codex-to-Codex path.
 
-Validated release environments currently include:
+This preview is human-reviewed and is not intended for unattended or
+production-critical use. Validated prerequisites are Node.js 20 or later, Git,
+and Codex CLI 0.147.0 or later with both `codex --version` and
+`codex exec --help` available. macOS is locally validated; Ubuntu is claimed
+for a release only after its exact candidate passes public CI. Windows support
+is not yet claimed.
 
-- Node.js 20 or later;
-- Git;
-- Codex CLI 0.147.0 or later;
-- macOS local validation; Ubuntu validation is confirmed for each release only
-  after the exact release candidate passes the public GitHub Actions workflow.
+## Five-minute start with the 0.1.1 source candidate
 
-Windows support is not yet claimed.
-
-## Agent-first quick start
-
-The recommended workflow is to let Codex install and use the plugin, then let
-the installed Skill prepare private configuration. You provide the goal and
-approve material authority; you do not need to hand-write task JSON.
-
-### 1. Ask Codex to install and verify the plugin
+Use this path to dogfood current source before `v0.1.1` is released. A `main`
+checkout is mutable and is **development-only**, not a reproducible release
+installation.
 
 Give a coordinating Codex instance this prompt:
 
 ```text
-Clone the versioned `v0.1.1` release tag from
-https://github.com/echopath-labs/relaypact into a local tools
-directory outside my target repository. Treat that tag as a version selector
-from the trusted official repository. It is not an independent cryptographic guarantee.
-Require the clone to exit successfully and verify that the checked-out HEAD is
-exactly the commit produced by peeling the annotated v0.1.1 tag. A shallow clone
-may print a warning while peeling an annotated tag; warning text alone is not
-the success or failure signal.
-If I provide a separately trusted full commit SHA, require an exact
-match before installation. Verify Codex CLI 0.147.0 or later and
-`codex exec`, install the root Agent Plugin through the repository's local
-marketplace, and run the installed Skill-local `support` and `doctor` commands.
-Report the Codex CLI version, `codex exec` availability, plugin and Skill
-discovery, Codex-to-Codex readiness, and any remaining setup. Do not read or
-copy credentials, configure a provider, start an executor, or commit or publish
-anything.
+Clone https://github.com/echopath-labs/relaypact from branch main into a local
+tools directory outside my target repository. This is an unreleased 0.1.1
+development-source installation, not a versioned release. Record the exact
+checkout commit and verify that package.json and plugin.json both report 0.1.1.
+Read README.md and the nearest AGENTS.md. Verify Node.js 20 or later, Git,
+Codex CLI 0.147.0 or later, and `codex exec --help`. Install the root Agent
+Plugin through its local marketplace, start no worker, then run the installed
+Skill-local `support` and `doctor` commands. Report the exact checkout commit,
+versions, Plugin and Skill discovery, Codex-to-Codex readiness, and remaining
+setup. Do not read credentials or configure, invoke, accept, apply, commit,
+push, tag, publish, release, or deploy anything.
 ```
 
-After installation, start a new Codex task so the installed Skill is available.
-
-### 2. Ask the installed Skill to delegate
-
-```text
-Use $relaypact to delegate this bounded engineering task.
-
-Target repository: <absolute path>
-Goal: <what should change>
-
-First inspect support and the repository's nearest agent instructions. Propose
-the readable paths, writable paths, forbidden paths, validation commands,
-worker route, and private state/archive locations before starting execution.
-For a read-only file, put it in readable paths, omit it from writable paths,
-and do not also put it in forbidden paths.
-Create any envelope or profile metadata only in a private directory outside the
-target repository. Never write credentials into those files. Stop for my
-decision if authority, route, validation, or final acceptance is ambiguous.
-Do not apply, commit, push, tag, publish, or deploy a candidate without separate
-authorization.
-```
-
-The Agent should then:
-
-1. inspect route support and repository instructions;
-2. propose a narrow task and validation boundary;
-3. prepare credential-free private artifacts;
-4. start an independent Codex executor only after material choices are clear;
-5. review the observed diff, scope, validations, and residual risks;
-6. present an explicit `accept`, `reject`, or `abandon` decision without
-   automatically applying the patch.
-
-See the complete [Agent-first tutorial](docs/agent-quickstart.md). A
-[manual configuration reference](docs/manual-configuration.md) remains
-available for debugging and automation authors.
-
-## Installation commands
-
-If an Agent needs the exact underlying commands, they are:
+The equivalent source commands are:
 
 ```bash
-set -e
-git clone --branch v0.1.1 --depth 1 \
-  https://github.com/echopath-labs/relaypact.git
-checkout_commit="$(git -C relaypact rev-parse HEAD)"
-release_commit="$(git -C relaypact rev-parse 'v0.1.1^{}')"
-test "$checkout_commit" = "$release_commit"
-codex plugin marketplace add /absolute/path/to/relaypact --json
+git clone --branch main --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-0.1.1-source
+cd relaypact-0.1.1-source
+git rev-parse HEAD
+node -e 'const p=require("./package.json"),q=require("./plugin.json"); if(p.version!=="0.1.1"||q.version!==p.version) process.exit(1)'
+codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
 ```
 
-After installation, the Skill-local `support` command reports the static route
-contract and `doctor` checks local runtime and plugin readiness without reading
-authentication, contacting a provider, or starting a worker. Independent
-`codex exec` calls use model capacity separately from the coordinating Agent
-and may consume additional quota or cost.
+Start a new Codex task after installation, then follow the
+[5-minute getting started guide](docs/agent-quickstart.md). It includes a real,
+bounded first delegation that invokes `$relaypact` and creates one reviewable
+documentation file.
 
-Host review reports `relaypactPromptBytes`, `relaypactResultSchemaBytes`, and
-`relaypactDeclaredInputBytes` separately from selected context bytes and
-provider-reported token usage. RelayPact byte counts do not include hidden Codex
-or provider harness input and are not token, quota, cost, or overhead estimates.
+## Install the latest published release
 
-The package uses the Agent Plugins 1.0 root `plugin.json`. It intentionally has
-no `.codex-plugin/plugin.json` and no MCP server.
-
-## Routes, harnesses, and providers
-
-An execution harness owns the Agent loop, tools, context, permissions, and
-result behavior. A model, provider, proxy, router, or protocol bridge is a
-separate route choice.
-
-- An independent `codex exec` worker remains the Codex harness when it uses a
-  compatible external provider.
-- An OpenCode CLI worker would use the OpenCode harness even if it selected the
-  same model.
-- Route failure is fail-closed; the toolkit never silently substitutes Pi,
-  OpenCode, another provider, or another model.
-
-The optional tested OpenCode Go / GPT-5.6 Luna route preserves the Codex
-harness and does not require OpenCodex. It is compatibility evidence, not an
-availability guarantee. See
-[OpenCode Go / GPT-5.6 Luna](docs/opencode-go-luna.md).
-
-## Safety boundary
-
-- Credentials stay in host-managed environment variables or user
-  configuration and never belong in task envelopes or committed examples.
-- The executor receives only task-scoped context and explicit grants.
-- Host validation and observed repository evidence determine eligibility.
-- Accepted evidence is archived privately; the toolkit does not copy the
-  candidate into the source repository.
-- Commit, push, tag, Release, package publication, and deployment always remain
-  separate actions.
-- This preview is not an operating-system security sandbox. Read
-  [SECURITY.md](SECURITY.md) before using it with untrusted code or credentials.
-
-## Documentation
-
-- [Agent-first tutorial](docs/agent-quickstart.md)
-- [Agent-first tutorial — 简体中文](docs/agent-quickstart.zh-CN.md)
-- [Manual configuration and CLI reference](docs/manual-configuration.md)
-- [End-to-end examples](examples/README.md)
-- [Codex-to-Codex adapter reference](packages/adapter-codex-codex/README.md)
-- [OpenCode Go / Luna provider route](docs/opencode-go-luna.md)
-- [Security policy and threat boundary](SECURITY.md)
-- [Contribution guide](CONTRIBUTING.md)
-- [Release checklist](RELEASING.md)
-
-## Development
-
-Run all offline deterministic validation:
+Today, the only published release is `v0.1.0`:
 
 ```bash
-npm run check
+git clone --branch v0.1.0 --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.0
+checkout_commit="$(git -C relaypact-v0.1.0 rev-parse HEAD)"
+release_commit="$(git -C relaypact-v0.1.0 rev-parse 'v0.1.0^{}')"
+test "$checkout_commit" = "$release_commit"
+cd relaypact-v0.1.0
+codex plugin marketplace add "$PWD" --json
+codex plugin add relaypact@relaypact-local --json
+codex plugin list --marketplace relaypact-local --json
 ```
 
-Validate only the first public-preview route:
+An official repository tag is a version selector, **not an independent
+cryptographic guarantee**. Compare a full commit SHA only when it came through
+a separate trusted channel. Do not substitute an absent `v0.1.1` tag into this
+command; [RELEASING.md](RELEASING.md) defines the release-time closeout.
+
+## The lifecycle in one minute
+
+`completed` != `accept` != `apply`:
+
+1. `completed` is the executor's result plus candidate evidence. It remains
+   pending independent host review.
+2. `accept` is an explicit host or human terminal decision after reviewing the
+   actual patch, scope, validation, credential safety, and residual risk. The
+   patch is still unapplied.
+3. `apply` is a later, separately authorized source mutation after the accepted
+   archive and current source base are rechecked.
+
+Commit, push, tag, GitHub Release, package publication, and deployment are
+further separate actions. RelayPact never infers one authority from another.
+
+## Safety and observability
+
+- Credentials stay in host-managed configuration or environment grants, never
+  in task envelopes, examples, or public documentation.
+- The executor receives only declared context and write authority. A read-only
+  path is readable, omitted from writable paths, and not forbidden.
+- Route or context failure is fail-closed; RelayPact never silently falls back
+  to Pi, another harness, provider, or model.
+- Host review keeps `relaypactPromptBytes`, `relaypactResultSchemaBytes`, and
+  `relaypactDeclaredInputBytes` separate from selected context bytes and
+  provider-reported tokens. They are not token, quota, cost, or hidden-harness
+  estimates.
+- An independent executor makes a separate model request and may consume
+  additional quota or cost.
+- This is not an operating-system security sandbox. Read
+  [SECURITY.md](SECURITY.md) before using untrusted code or credentials.
+
+## Install lifecycle and documentation
+
+- [5-minute getting started](docs/agent-quickstart.md)
+- [5 分钟开始使用](docs/agent-quickstart.zh-CN.md)
+- [Install, version verification, upgrade, uninstall, troubleshooting, and CLI reference](docs/manual-configuration.md)
+- [Codex-to-Codex adapter reference](packages/adapter-codex-codex/README.md)
+- [Examples](examples/README.md)
+- [Release checklist](RELEASING.md)
+- [Contribution guide](CONTRIBUTING.md)
+- [NOTICE](NOTICE) and [Apache License 2.0](LICENSE) (`Apache-2.0`)
+
+## Development validation
 
 ```bash
 npm run check:codex-codex
+npm run check
 ```
 
-Real Codex, Pi, router, and provider smokes are opt-in and may consume local
-resources or account quota. They are never part of the deterministic default
-test suite.
-
-## License
-
-RelayPact is licensed under the
-[Apache License 2.0](LICENSE) (`Apache-2.0`). See [NOTICE](NOTICE) for attribution.
+The default suite is deterministic and offline. Real Codex, Pi, router, and
+provider smokes are opt-in and may consume local resources or account quota.

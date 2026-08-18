@@ -97,7 +97,8 @@ test("public package rejects first-use readiness and lifecycle guidance drift", 
     (await readFile(englishPath, "utf8"))
       .replaceAll("codex exec --help", "executor help")
       .replaceAll("No additional executor installation is required.", "No other worker setup is required.")
-      .replaceAll("not an independent cryptographic guarantee", "an immutable guarantee")
+      .replaceAll("not an independent", "an immutable")
+      .replaceAll("`completed` != `accept` != `apply`", "completion includes acceptance and apply")
   );
   const quickStartPath = path.join(root, "docs", "agent-quickstart.md");
   await writeFile(
@@ -114,42 +115,56 @@ test("public package rejects first-use readiness and lifecycle guidance drift", 
   const errors = await validatePackage(root);
   assert(errors.some((item) => item.includes("README.md must include \"codex exec --help\"")));
   assert(errors.some((item) => item.includes("README.md must include \"No additional executor installation is required.\"")));
-  assert(errors.some((item) => item.includes("README.md must include \"not an independent cryptographic guarantee\"")));
+  assert(errors.some((item) => item.includes("README.md must include \"not an independent\"")));
+  assert(errors.some((item) => item.includes("README.md must include \"\`completed\` != \`accept\` != \`apply\`\"")));
   assert(errors.some((item) => item.includes("docs/agent-quickstart.md must include \"v0.1.1\"")));
   assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"## Uninstall\"")));
   assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"## Glossary\"")));
   await rm(root, { recursive: true });
 });
 
-test("public package rejects peeled release identity and RelayPact metric guidance drift", async () => {
+test("public package rejects absent-tag release claims and metric guidance drift", async () => {
   const root = await copyCurrentPublicPackage();
   for (const relative of [
     "README.md",
     "README.zh-CN.md",
     "docs/agent-quickstart.md",
-    "docs/agent-quickstart.zh-CN.md"
+    "docs/agent-quickstart.zh-CN.md",
+    "docs/manual-configuration.md"
   ]) {
     const target = path.join(root, ...relative.split("/"));
     await writeFile(
       target,
       (await readFile(target, "utf8"))
-        .replaceAll("git -C relaypact rev-parse 'v0.1.1^{}'", "printf unknown-tag")
+        .replaceAll("source candidate", "published release")
         .replaceAll("relaypactDeclaredInputBytes", "declared bytes")
     );
   }
-  const manual = path.join(root, "docs", "manual-configuration.md");
+  const readme = path.join(root, "README.md");
   await writeFile(
-    manual,
-    (await readFile(manual, "utf8"))
-      .replaceAll("git rev-parse 'v0.1.1^{}'", "printf unknown-tag")
-      .replaceAll("relaypactDeclaredInputBytes", "declared bytes")
+    readme,
+    `${await readFile(readme, "utf8")}\n\`git clone --branch v0.1.1\`\n`
   );
   const errors = await validatePackage(root);
-  assert(errors.some((item) => item.includes("README.md must include \"git -C relaypact rev-parse 'v0.1.1^{}'\"")));
+  assert(errors.some((item) => item.includes("README.md must include \"source candidate\"")));
+  assert(errors.some((item) => item.includes("README.md must not include \"git clone --branch v0.1.1\"")));
   assert(errors.some((item) => item.includes("README.zh-CN.md must include \"relaypactDeclaredInputBytes\"")));
-  assert(errors.some((item) => item.includes("docs/agent-quickstart.md must include \"git -C relaypact rev-parse 'v0.1.1^{}'\"")));
-  assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"git rev-parse 'v0.1.1^{}'\"")));
   assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"relaypactDeclaredInputBytes\"")));
+  await rm(root, { recursive: true });
+});
+
+test("public package rejects Pi promotion into the Codex-only first path", async () => {
+  const root = await copyCurrentPublicPackage();
+  const quickStartPath = path.join(root, "docs", "agent-quickstart.md");
+  await writeFile(
+    quickStartPath,
+    (await readFile(quickStartPath, "utf8"))
+      .replace("Pi is experimental and inactive", "Pi is required for first use")
+      .concat("\nRun \`run-pi\` as a fallback.\n")
+  );
+  const errors = await validatePackage(root);
+  assert(errors.some((item) => item.includes("docs/agent-quickstart.md must include \"Pi is experimental and inactive\"")));
+  assert(errors.some((item) => item.includes("docs/agent-quickstart.md must not include \"run-pi\"")));
   await rm(root, { recursive: true });
 });
 
