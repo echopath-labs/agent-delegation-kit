@@ -35,10 +35,22 @@ codex exec --help
 
 ## Release state and version verification
 
-Public source currently reports version `0.1.1`, but `v0.1.1` is not
-released and its tag does not exist. The latest published release is
-`v0.1.0`. Never infer release availability from package or Plugin version
-fields alone.
+The latest published release is `v0.1.1`. Package and Plugin version fields
+alone are not release identity; verify the official tag's peeled commit.
+
+Install and verify the latest published release:
+
+```bash
+git clone --branch v0.1.1 --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.1
+checkout_commit="$(git -C relaypact-v0.1.1 rev-parse HEAD)"
+release_commit="$(git -C relaypact-v0.1.1 rev-parse 'v0.1.1^{}')"
+test "$checkout_commit" = "$release_commit"
+cd relaypact-v0.1.1
+codex plugin marketplace add "$PWD" --json
+codex plugin add relaypact@relaypact-local --json
+codex plugin list --marketplace relaypact-local --json
+```
 
 For current-source dogfood, clone the mutable `main` branch, record its exact
 commit, and verify aligned source metadata:
@@ -59,7 +71,7 @@ This is a development-source installation, not a reproducible release
 installation. If an organization supplies a full commit SHA through a separate trusted channel,
 compare it exactly with `git rev-parse HEAD` before Plugin registration.
 
-The latest published release remains available from `v0.1.0`:
+The previous published release remains available from `v0.1.0`:
 
 ```bash
 git clone --branch v0.1.0 --depth 1 \
@@ -74,9 +86,8 @@ codex plugin list --marketplace relaypact-local --json
 ```
 
 An official repository tag is a version selector, not an independent cryptographic guarantee.
-The `v0.1.1` peeled-tag procedure becomes a valid
-release installation only after the separately authorized tag exists and is
-verified. See [RELEASING.md](../RELEASING.md).
+Compare a full commit SHA only when it came through a
+separate trusted channel. See [RELEASING.md](../RELEASING.md).
 
 ## Install the root plugin
 
