@@ -258,7 +258,7 @@ async function discoverAlternateObjectDirectories(primaryObjectDirectory) {
   return discovered;
 }
 
-export async function snapshotGitControls(repositoryRoot) {
+export async function snapshotGitControls(repositoryRoot, options = {}) {
   const gitDirectory = await resolveGitDirectory(repositoryRoot);
   const commonDirectory = await resolveCommonGitDirectory(gitDirectory);
   const objectDirectories = await discoverAlternateObjectDirectories(path.join(commonDirectory, "objects"));
@@ -273,8 +273,15 @@ export async function snapshotGitControls(repositoryRoot) {
   let totalDirectories = 0;
   let totalBytes = 0;
   for (const root of orderedRoots) {
+    const currentIndex = path.join(gitDirectory, "index");
+    const relativeIndex = isInside(root, currentIndex)
+      ? path.relative(root, currentIndex).split(path.sep).join("/")
+      : null;
     const snapshot = await collect(root, {
-      exclude: GIT_CONTROL_EXCLUDES,
+      exclude: [
+        ...GIT_CONTROL_EXCLUDES,
+        ...(options.excludeIndexes === true && relativeIndex ? [relativeIndex] : [])
+      ],
       maxFiles: DEFAULT_MAX_FILES - totalFiles,
       maxDirectories: DEFAULT_MAX_FILES - totalDirectories,
       maxBytes: DEFAULT_MAX_BYTES - totalBytes

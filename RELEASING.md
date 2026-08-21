@@ -37,11 +37,11 @@ The candidate `LICENSE` must contain the reviewed Apache License 2.0 text,
 `plugin.json`, both README language entries, and contribution guidance must use
 the exact SPDX identifier `Apache-2.0`. License drift is a release blocker.
 
-## 0.1.1 release-time documentation closeout
+## 0.1.2 release-time documentation closeout
 
 The checked-in source state is intentionally `candidate`: package and Plugin
-metadata report `0.1.1`, while public onboarding says that `v0.1.1` is not
-yet released and keeps `v0.1.0` as the latest published installation. Never
+metadata report `0.1.2`, while public onboarding says that `v0.1.2` is not
+yet released and keeps `v0.1.1` as the latest published installation. Never
 merge released-state documentation to `main` while the tag or GitHub Release
 is absent.
 
@@ -59,18 +59,18 @@ This closeout is a later, separately authorized release operation:
      `candidate` to `released`;
    - update `README.md`, `README.zh-CN.md`,
      `docs/agent-quickstart.md`, `docs/agent-quickstart.zh-CN.md`, and
-     `docs/manual-configuration.md` so `v0.1.1` is the latest published
+     `docs/manual-configuration.md` so `v0.1.2` is the latest published
      install and every tag checkout verifies `HEAD` against the peeled
-     `v0.1.1^{}` commit;
+     `v0.1.2^{}` commit;
    - change the changelog heading to
-     `## [0.1.1] - <human-supplied YYYY-MM-DD> - Public Preview` and restore
-     the `v0.1.0...v0.1.1` comparison link;
+     `## [0.1.2] - <human-supplied YYYY-MM-DD> - Public Preview` and restore
+     the `v0.1.1...v0.1.2` comparison link;
    - update focused validation fixtures only as required by the released-state
      branch of the package validator.
 5. Run the full candidate validation, exact public allowlist, privacy/history
    and security scans, no-object-sharing clean-clone validation, and Plugin
    discovery. Confirm the release-state commit is clean and approved.
-6. Under the separate remote authorization, create the annotated `v0.1.1` tag
+6. Under the separate remote authorization, create the annotated `v0.1.2` tag
    at that exact release-state commit, push only the approved tag, and create
    the GitHub Release. Verify the remote tag peels to the approved commit and
    the GitHub Release is visible before changing live `main`.

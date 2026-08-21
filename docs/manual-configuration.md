@@ -35,8 +35,9 @@ codex exec --help
 
 ## Release state and version verification
 
-The latest published release is `v0.1.1`. Package and Plugin version fields
-alone are not release identity; verify the official tag's peeled commit.
+Public source currently reports the unreleased `0.1.2` source candidate;
+`v0.1.2` is not released. The latest published release is `v0.1.1`. Package
+and Plugin version fields alone are not release identity.
 
 Install and verify the latest published release:
 
@@ -58,17 +59,17 @@ commit, and verify aligned source metadata:
 ```bash
 set -e
 git clone --branch main --depth 1 \
-  https://github.com/echopath-labs/relaypact.git relaypact-0.1.1-source
-cd relaypact-0.1.1-source
+  https://github.com/echopath-labs/relaypact.git relaypact-0.1.2-source
+cd relaypact-0.1.2-source
 git rev-parse HEAD
-node -e 'const p=require("./package.json"),q=require("./plugin.json"); if(p.version!=="0.1.1"||q.version!==p.version) process.exit(1)'
+node -e 'const p=require("./package.json"),q=require("./plugin.json"); if(p.version!=="0.1.2"||q.version!==p.version) process.exit(1)'
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
 ```
 
-This is a development-source installation, not a reproducible release
-installation. If an organization supplies a full commit SHA through a separate trusted channel,
+This source candidate is a development-source installation, not a reproducible
+release installation. If an organization supplies a full commit SHA through a separate trusted channel,
 compare it exactly with `git rev-parse HEAD` before Plugin registration.
 
 The previous published release remains available from `v0.1.0`:
@@ -308,6 +309,13 @@ does not convert a local source or tag checkout automatically.
 Do not overwrite an installation while an active task depends on its Skill
 files. Existing private task archives are versioned evidence and do not need to
 be rewritten for a plugin upgrade.
+
+Tasks prepared by v0.1.1 do not contain the preparation-time semantic Git index
+baseline required by 0.1.2. Do not retry, accept, migrate, or infer trust for an
+old pending task after upgrading; preserve its private evidence unchanged and
+prepare a new task with the 0.1.2 source candidate. To roll back this local
+candidate, remove its Plugin/marketplace registration and reinstall the verified
+`v0.1.1` tag in a separate tools directory. Rollback does not rewrite task state.
 
 ## Uninstall
 

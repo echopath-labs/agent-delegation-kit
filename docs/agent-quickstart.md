@@ -8,8 +8,8 @@ from the existing Codex CLI; there is no second executor package.
 
 Current release truth:
 
-- `v0.1.1` is the latest published release; `v0.1.0` remains available.
-- This guide installs the versioned tag and verifies its peeled commit SHA.
+- `0.1.2` is an unreleased source candidate; `v0.1.2` is not released.
+- `v0.1.1` is the latest published release; this guide records the candidate's exact commit SHA.
 - Pi is experimental and inactive; it is not installed, loaded, or used here.
 
 For exact CLI and JSON fields, use the
@@ -30,15 +30,15 @@ Codex Desktop alone does not prove that the CLI or `codex exec` is available.
 The independent worker makes a separate model request and may consume additional
 quota or cost.
 
-## Minute 1: install and verify the v0.1.1 release
+## Minute 1: install and verify the 0.1.2 source candidate
 
 Give the coordinating Codex instance this prompt:
 
 ```text
-Clone the versioned v0.1.1 release tag from
-https://github.com/echopath-labs/relaypact into a local tools directory outside
-my target repository. Record the exact checkout commit SHA and verify it against
-the peeled v0.1.1 tag commit. Verify package.json and plugin.json both report 0.1.1; read README.md
+Clone https://github.com/echopath-labs/relaypact from main into a local tools
+directory outside my target repository. Treat it as an unreleased 0.1.2 source
+candidate, not a versioned release. Record the exact checkout commit SHA.
+Verify package.json and plugin.json both report 0.1.2; read README.md
 and the nearest AGENTS.md; verify Node.js 20+, Git, Codex CLI 0.147.0+, and
 `codex exec --help`. Install the root Plugin through its local marketplace.
 Without reading credentials, contacting a provider, or starting a worker, run
@@ -48,24 +48,22 @@ remaining setup. Do not accept, apply, commit, push, tag, publish, release, or
 deploy anything.
 ```
 
-The equivalent release commands are:
+The equivalent source commands are:
 
 ```bash
-git clone --branch v0.1.1 --depth 1 \
-  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.1
-checkout_commit="$(git -C relaypact-v0.1.1 rev-parse HEAD)"
-release_commit="$(git -C relaypact-v0.1.1 rev-parse 'v0.1.1^{}')"
-test "$checkout_commit" = "$release_commit"
-cd relaypact-v0.1.1
-node -e 'const p=require("./package.json"),q=require("./plugin.json"); if(p.version!=="0.1.1"||q.version!==p.version) process.exit(1)'
+git clone --branch main --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-0.1.2-source
+cd relaypact-0.1.2-source
+git rev-parse HEAD
+node -e 'const p=require("./package.json"),q=require("./plugin.json"); if(p.version!=="0.1.2"||q.version!==p.version) process.exit(1)'
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
 ```
 
-An official tag is a version selector, not an independent cryptographic
-guarantee. For current-source dogfood, use a separate development-only checkout,
-record its exact commit, and never present it as the release installation:
+`v0.1.2` is not released. This source candidate is development-only; record its
+exact commit and never present it as a tag installation. An official tag is a
+version selector, not an independent cryptographic guarantee.
 
 ```bash
 git clone --branch main --depth 1 \

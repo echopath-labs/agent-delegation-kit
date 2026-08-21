@@ -2,6 +2,26 @@
 
 All notable public changes to RelayPact are recorded here.
 
+## [Unreleased] - 0.1.2 hotfix candidate
+
+### Fixed
+
+- Replaced raw Git index byte identity with a canonical semantic fingerprint
+  over staged path, conflict stage, mode, object ID, assume-unchanged,
+  skip-worktree, and intent-to-add state. Read-only Git stat-cache refreshes no
+  longer invalidate an otherwise unchanged pending review or terminal decision.
+- Kept HEAD, refs, objects, hooks, configuration, worktree controls, filesystem
+  evidence, and actual staged/index-flag tampering fail-closed.
+
+### Compatibility
+
+- `v0.1.1` remains the latest published release. Version `0.1.2` is an
+  unreleased local source candidate; no tag, GitHub Release, or npm publication
+  is claimed.
+- Tasks prepared by v0.1.1 lack the new preparation-time semantic index
+  baseline and remain ineligible for migration or terminal decision under
+  v0.1.2. Prepare a new task instead.
+
 ## [0.1.1] - 2026-08-19 - Public Preview
 
 ### Changed
@@ -126,3 +146,4 @@ All notable public changes to RelayPact are recorded here.
 
 [0.1.1]: https://github.com/echopath-labs/relaypact/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/echopath-labs/relaypact/releases/tag/v0.1.0
+[Unreleased]: https://github.com/echopath-labs/relaypact/compare/v0.1.1...main

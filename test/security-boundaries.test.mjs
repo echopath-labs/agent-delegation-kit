@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, lstat, mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, realpath, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
@@ -25,7 +25,7 @@ import { analyzeNodeEsm } from "../packages/core/src/context/node-esm.mjs";
 import { planDelegationContext } from "../packages/core/src/context/planner.mjs";
 import { validateTaskEnvelope } from "../packages/contracts/src/envelope.mjs";
 import { changedFilesystemPaths, snapshotFilesystem, snapshotGitControls } from "../packages/core/src/filesystem-evidence.mjs";
-import { getStatusPaths } from "../packages/core/src/git.mjs";
+import { getStatusPaths, snapshotGitIndex } from "../packages/core/src/git.mjs";
 import { evaluatePathScope } from "../packages/contracts/src/path-policy.mjs";
 import { runProcess } from "../packages/core/src/process.mjs";
 import { runDelegation } from "../packages/adapter-codex-pi/src/run-delegation.mjs";
@@ -99,6 +99,113 @@ test("machine Git evidence fails closed instead of parsing a truncated prefix", 
   await assert.rejects(getStatusPaths(root), (error) => error.code === "git_output_truncated");
 });
 
+test("canonical Git index identity ignores stat cache and preserves unusual paths", async () => {
+  const root = await createGitRepository();
+  const unusualPath = "tab\tline\nname.txt";
+  await writeFile(path.join(root, unusualPath), "unusual\n");
+  await execFileAsync("git", ["add", "--", unusualPath], { cwd: root });
+  await execFileAsync("git", ["commit", "-m", "test: unusual path"], { cwd: root });
+  const controlsBefore = await snapshotGitControls(root, { excludeIndexes: true });
+  const before = await snapshotGitIndex(root);
+  assert.equal(before.entries.find((entry) => entry.path === unusualPath)?.stage, 0);
+  const rawBefore = await readFile(path.join(root, ".git", "index"));
+  const refreshedPath = path.join(root, "README.md");
+  const refreshedAt = new Date(Date.now() + 60_000);
+  await utimes(refreshedPath, refreshedAt, refreshedAt);
+  await execFileAsync("git", ["update-index", "--refresh"], { cwd: root });
+  const rawAfter = await readFile(path.join(root, ".git", "index"));
+  const after = await snapshotGitIndex(root);
+  const controlsAfter = await snapshotGitControls(root, { excludeIndexes: true });
+  assert.notDeepEqual(rawAfter, rawBefore);
+  assert.equal(after.fingerprint, before.fingerprint);
+  assert.equal(controlsAfter.fingerprint, controlsBefore.fingerprint);
+});
+
+test("canonical Git index identity preserves slash and literal backslash path spelling", { skip: process.platform === "win32" }, async () => {
+  const root = await createGitRepository();
+  await mkdir(path.join(root, "dir"));
+  await writeFile(path.join(root, "dir", "file.txt"), "slash\n");
+  await writeFile(path.join(root, "dir\\file.txt"), "backslash\n");
+  await execFileAsync("git", ["add", "--", "dir/file.txt", "dir\\file.txt"], { cwd: root });
+  const snapshot = await snapshotGitIndex(root);
+  const paths = snapshot.entries.map((entry) => entry.path);
+  assert.ok(paths.includes("dir/file.txt"));
+  assert.ok(paths.includes("dir\\file.txt"));
+  assert.notEqual(paths.indexOf("dir/file.txt"), paths.indexOf("dir\\file.txt"));
+});
+
+test("canonical Git index identity binds security flags", async () => {
+  const root = await createGitRepository();
+  const baseline = await snapshotGitIndex(root);
+  await execFileAsync("git", ["update-index", "--assume-unchanged", "README.md"], { cwd: root });
+  const assumed = await snapshotGitIndex(root);
+  assert.notEqual(assumed.fingerprint, baseline.fingerprint);
+  assert.equal(assumed.entries[0].assumeUnchanged, true);
+  await execFileAsync("git", ["update-index", "--no-assume-unchanged", "README.md"], { cwd: root });
+  await execFileAsync("git", ["update-index", "--skip-worktree", "README.md"], { cwd: root });
+  const skipped = await snapshotGitIndex(root);
+  assert.notEqual(skipped.fingerprint, baseline.fingerprint);
+  assert.equal(skipped.entries[0].skipWorktree, true);
+  await execFileAsync("git", ["update-index", "--no-skip-worktree", "README.md"], { cwd: root });
+  await writeFile(path.join(root, "intent.txt"), "intent\n");
+  await execFileAsync("git", ["add", "-N", "--", "intent.txt"], { cwd: root });
+  const intent = await snapshotGitIndex(root);
+  assert.notEqual(intent.fingerprint, baseline.fingerprint);
+  assert.equal(intent.entries.find((entry) => entry.path === "intent.txt")?.intentToAdd, true);
+});
+
+test("canonical Git index identity rejects staged content, paths, deletion, mode, and conflicts", async () => {
+  const mutation = async (mutate) => {
+    const root = await createGitRepository();
+    const before = await snapshotGitIndex(root);
+    await mutate(root);
+    const after = await snapshotGitIndex(root);
+    assert.notEqual(after.fingerprint, before.fingerprint);
+    return { root, after };
+  };
+  await mutation(async (root) => {
+    await writeFile(path.join(root, "added.txt"), "added\n");
+    await execFileAsync("git", ["add", "added.txt"], { cwd: root });
+  });
+  await mutation(async (root) => {
+    await writeFile(path.join(root, "README.md"), "modified\n");
+    await execFileAsync("git", ["add", "README.md"], { cwd: root });
+  });
+  await mutation(async (root) => {
+    await execFileAsync("git", ["rm", "README.md"], { cwd: root });
+  });
+  const mode = await mutation(async (root) => {
+    await chmod(path.join(root, "README.md"), 0o755);
+    await execFileAsync("git", ["add", "README.md"], { cwd: root });
+  });
+  assert.equal(mode.after.entries[0].mode, "100755");
+  const conflict = await mutation(async (root) => {
+    await execFileAsync("git", ["switch", "-c", "other"], { cwd: root });
+    await writeFile(path.join(root, "README.md"), "other\n");
+    await execFileAsync("git", ["commit", "-am", "test: other"], { cwd: root });
+    await execFileAsync("git", ["switch", "main"], { cwd: root });
+    await writeFile(path.join(root, "README.md"), "main\n");
+    await execFileAsync("git", ["commit", "-am", "test: main"], { cwd: root });
+    await assert.rejects(execFileAsync("git", ["merge", "other"], { cwd: root }));
+  });
+  assert.deepEqual(conflict.after.entries.map((entry) => entry.stage), [1, 2, 3]);
+});
+
+test("canonical Git index identity rejects non-UTF-8 paths without lossy collisions", async () => {
+  const root = await createGitRepository();
+  const objectSource = path.join(root, "object-source.txt");
+  await writeFile(objectSource, "invalid path fixture\n");
+  const objectId = (await execFileAsync("git", ["hash-object", "-w", objectSource], { cwd: root })).stdout.trim();
+  const pathBytes = Buffer.concat([Buffer.from("bad-"), Buffer.from([0xff]), Buffer.from(".txt")]);
+  const indexInfo = Buffer.concat([Buffer.from(`100644 ${objectId}\t`), pathBytes, Buffer.from([0])]);
+  const update = await runProcess("git", ["update-index", "-z", "--index-info"], { cwd: root, input: indexInfo });
+  assert.equal(update.exitCode, 0);
+  await assert.rejects(
+    snapshotGitIndex(root),
+    (error) => error.code === "git_index_evidence_invalid" && /valid UTF-8/.test(error.message)
+  );
+});
+
 test("filesystem evidence bounds directory traversal independently of file bytes", async () => {
   const root = await createDirectory();
   await mkdir(path.join(root, "one", "two"), { recursive: true });
@@ -119,6 +226,26 @@ test("Git-control evidence covers a linked worktree common directory", async () 
   await writeFile(objectPath, "corrupted shared object\n");
   const after = await snapshotGitControls(linkedRoot);
   assert.ok(changedFilesystemPaths(before, after).length > 0);
+});
+
+test("index exclusion preserves refs named index and sibling worktree indexes", async () => {
+  const root = await createGitRepository();
+  await execFileAsync("git", ["branch", "index"], { cwd: root });
+  const refBefore = await snapshotGitControls(root, { excludeIndexes: true });
+  const refPath = path.join(root, ".git", "refs", "heads", "index");
+  await writeFile(refPath, `${(await readFile(refPath, "utf8")).trim()}\n# changed\n`);
+  const refAfter = await snapshotGitControls(root, { excludeIndexes: true });
+  assert.notEqual(refAfter.fingerprint, refBefore.fingerprint);
+
+  const siblingRoot = await createGitRepository();
+  const linkedRoot = await createDirectory();
+  await execFileAsync("git", ["worktree", "add", "--detach", linkedRoot], { cwd: siblingRoot });
+  const siblingBefore = await snapshotGitControls(linkedRoot, { excludeIndexes: true });
+  const refreshedAt = new Date(Date.now() + 60_000);
+  await utimes(path.join(siblingRoot, "README.md"), refreshedAt, refreshedAt);
+  await execFileAsync("git", ["update-index", "--refresh"], { cwd: siblingRoot });
+  const siblingAfter = await snapshotGitControls(linkedRoot, { excludeIndexes: true });
+  assert.notEqual(siblingAfter.fingerprint, siblingBefore.fingerprint);
 });
 
 test("Git-control evidence covers configured alternate object stores", async () => {
