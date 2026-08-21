@@ -16,7 +16,7 @@ import {
   verifySourceUnchanged
 } from "../packages/executor-codex/src/capsule.mjs";
 import { validateTaskEnvelope } from "../packages/contracts/src/envelope.mjs";
-import { resolveRepository } from "../packages/core/src/git.mjs";
+import { resolveRepository, snapshotGitIndex } from "../packages/core/src/git.mjs";
 import { createDirectory, createGitRepository, makeEnvelope } from "./helpers.mjs";
 
 const workerResultSchemaPath = fileURLToPath(new URL("../packages/contracts/schemas/codex-worker-result.schema.json", import.meta.url));
@@ -236,7 +236,9 @@ test("private index stat-cache refresh does not count as control tampering", asy
   const capsule = await prepareCapsule({ ...fixture, profile, workerResultSchemaPath });
   const indexPath = path.join(capsule.gitControl.gitDir, "index");
   const before = await readFile(indexPath);
-  await writeFile(path.join(capsule.capsuleRoot, "README.md"), "# Fixture\n");
+  const semanticBefore = await snapshotGitIndex(capsule.capsuleRoot, capsule.gitControl);
+  const refreshedAt = new Date("2001-01-01T00:00:00.000Z");
+  await utimes(path.join(capsule.capsuleRoot, "README.md"), refreshedAt, refreshedAt);
   await execFileAsync("git", [
     `--git-dir=${capsule.gitControl.gitDir}`,
     `--work-tree=${capsule.gitControl.workTree}`,
@@ -244,7 +246,9 @@ test("private index stat-cache refresh does not count as control tampering", asy
     "--refresh"
   ], { cwd: capsule.capsuleRoot });
   const after = await readFile(indexPath);
+  const semanticAfter = await snapshotGitIndex(capsule.capsuleRoot, capsule.gitControl);
   assert.notDeepEqual(after, before, "fixture must rewrite only raw index stat-cache bytes");
+  assert.equal(semanticAfter.fingerprint, semanticBefore.fingerprint);
   assert.deepEqual(await getPrivateControlChanges(capsule), []);
 });
 
