@@ -123,7 +123,7 @@ test("public package rejects first-use readiness and lifecycle guidance drift", 
   await rm(root, { recursive: true });
 });
 
-test("public package rejects candidate release-state and metric guidance drift", async () => {
+test("public package rejects released-state tag verification and metric guidance drift", async () => {
   const root = await copyCurrentPublicPackage();
   for (const relative of [
     "README.md",
@@ -136,22 +136,20 @@ test("public package rejects candidate release-state and metric guidance drift",
     await writeFile(
       target,
       (await readFile(target, "utf8"))
-        .replaceAll("git clone --branch main --depth 1", "git clone --branch release --depth 1")
-        .replaceAll("source candidate", "published release")
-        .replaceAll("`v0.1.2` is not released", "`v0.1.2` is released")
+        .replaceAll("git clone --branch v0.1.2", "git clone --branch release")
+        .replaceAll("v0.1.2^{}", "v0.1.2")
         .replaceAll("relaypactDeclaredInputBytes", "declared bytes")
     );
   }
   const readme = path.join(root, "README.md");
   await writeFile(
     readme,
-    (await readFile(readme, "utf8")).replace("Latest published release: **v0.1.1**", "Latest published release: **v0.1.0**")
+    (await readFile(readme, "utf8")).replace("Latest published release: **v0.1.2**", "Latest published release: **v0.1.1**")
   );
   const errors = await validatePackage(root);
-  assert(errors.some((item) => item.includes("README.md must include \"git clone --branch main --depth 1\"")));
-  assert(errors.some((item) => item.includes("README.md must include \"source candidate\"")));
-  assert(errors.some((item) => item.includes("README.md must include \"`v0.1.2` is not released\"")));
-  assert(errors.some((item) => item.includes("README.md must include \"Latest published release: **v0.1.1**\"")));
+  assert(errors.some((item) => item.includes("README.md must include \"git clone --branch v0.1.2\"")));
+  assert(errors.some((item) => item.includes("README.md must include \"v0.1.2^{}\"")));
+  assert(errors.some((item) => item.includes("README.md must include \"Latest published release: **v0.1.2**\"")));
   assert(errors.some((item) => item.includes("README.zh-CN.md must include \"relaypactDeclaredInputBytes\"")));
   assert(errors.some((item) => item.includes("docs/manual-configuration.md must include \"relaypactDeclaredInputBytes\"")));
   await rm(root, { recursive: true });

@@ -2,7 +2,7 @@
 
 All notable public changes to RelayPact are recorded here.
 
-## [Unreleased] - 0.1.2 hotfix candidate
+## [0.1.2] - 2026-08-21 - Public Preview
 
 ### Fixed
 
@@ -15,9 +15,8 @@ All notable public changes to RelayPact are recorded here.
 
 ### Compatibility
 
-- `v0.1.1` remains the latest published release. Version `0.1.2` is an
-  unreleased local source candidate; no tag, GitHub Release, or npm publication
-  is claimed.
+- `v0.1.2` is the latest published release. npm publication remains out of
+  scope; installation uses the versioned GitHub release tag.
 - Tasks prepared by v0.1.1 lack the new preparation-time semantic index
   baseline and remain ineligible for migration or terminal decision under
   v0.1.2. Prepare a new task instead.
@@ -146,4 +145,4 @@ All notable public changes to RelayPact are recorded here.
 
 [0.1.1]: https://github.com/echopath-labs/relaypact/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/echopath-labs/relaypact/releases/tag/v0.1.0
-[Unreleased]: https://github.com/echopath-labs/relaypact/compare/v0.1.1...main
+[0.1.2]: https://github.com/echopath-labs/relaypact/compare/v0.1.1...v0.1.2

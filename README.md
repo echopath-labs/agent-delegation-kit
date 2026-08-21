@@ -15,8 +15,8 @@ CLI. No second Codex installation or executor package is required.
 
 ## Release status
 
-- Public source version: **0.1.2 source candidate** (`v0.1.2` is not released).
-- Latest published release: **v0.1.1**.
+- Public source version: **0.1.2 Public Preview**.
+- Latest published release: **v0.1.2**.
 - Support: `codex-codex` is `public-preview`; `codex-pi` remains
   `experimental` and inactive.
 
@@ -31,18 +31,18 @@ and Codex CLI 0.147.0 or later with both `codex --version` and
 for a release only after its exact candidate passes public CI. Windows support
 is not yet claimed.
 
-## Five-minute start with the 0.1.2 source candidate
+## Five-minute start with the v0.1.2 release
 
-Use this development-only path to review the unreleased hotfix candidate. A
-`main` checkout is mutable and is not a reproducible release installation.
+Use the versioned `v0.1.2` tag for a reproducible release installation.
 
 Give a coordinating Codex instance this prompt:
 
 ```text
-Clone https://github.com/echopath-labs/relaypact from branch main into a local
-tools directory outside my target repository. Treat it as an unreleased 0.1.2
-source candidate, not a versioned release. Record the exact checkout commit and
-verify that package.json and plugin.json both report 0.1.2.
+Clone the versioned v0.1.2 release tag from
+https://github.com/echopath-labs/relaypact into a local tools directory outside
+my target repository. Record the exact checkout commit, verify it against the
+peeled v0.1.2 tag commit, and verify that package.json and plugin.json both
+report 0.1.2.
 Read README.md and the nearest AGENTS.md. Verify Node.js 20 or later, Git,
 Codex CLI 0.147.0 or later, and `codex exec --help`. Install the root Agent
 Plugin through its local marketplace, start no worker, then run the installed
@@ -52,13 +52,15 @@ setup. Do not read credentials or configure, invoke, accept, apply, commit,
 push, tag, publish, release, or deploy anything.
 ```
 
-The equivalent source commands are:
+The equivalent release commands are:
 
 ```bash
-git clone --branch main --depth 1 \
-  https://github.com/echopath-labs/relaypact.git relaypact-0.1.2-source
-cd relaypact-0.1.2-source
-git rev-parse HEAD
+git clone --branch v0.1.2 --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.2
+checkout_commit="$(git -C relaypact-v0.1.2 rev-parse HEAD)"
+release_commit="$(git -C relaypact-v0.1.2 rev-parse 'v0.1.2^{}')"
+test "$checkout_commit" = "$release_commit"
+cd relaypact-v0.1.2
 node -e 'const p=require("./package.json"),q=require("./plugin.json"); if(p.version!=="0.1.2"||q.version!==p.version) process.exit(1)'
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
@@ -72,17 +74,18 @@ documentation file.
 
 ## Install the latest published release
 
-The latest published release is `v0.1.1`:
+The latest published release is `v0.1.2`:
 
-The previous `v0.1.0` release remains available for exact historical installs.
+The previous `v0.1.1` and `v0.1.0` releases remain available for exact
+historical installs.
 
 ```bash
-git clone --branch v0.1.1 --depth 1 \
-  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.1
-checkout_commit="$(git -C relaypact-v0.1.1 rev-parse HEAD)"
-release_commit="$(git -C relaypact-v0.1.1 rev-parse 'v0.1.1^{}')"
+git clone --branch v0.1.2 --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.2
+checkout_commit="$(git -C relaypact-v0.1.2 rev-parse HEAD)"
+release_commit="$(git -C relaypact-v0.1.2 rev-parse 'v0.1.2^{}')"
 test "$checkout_commit" = "$release_commit"
-cd relaypact-v0.1.1
+cd relaypact-v0.1.2
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
@@ -92,9 +95,8 @@ An official repository tag is a version selector, **not an independent
 cryptographic guarantee**. Compare a full commit SHA only when it came through
 a separate trusted channel.
 
-`v0.1.2` is not released and no v0.1.2 tag installation is claimed. Keep the
-source candidate distinct from the released installation and record its exact
-commit.
+To dogfood mutable current source instead, keep the development-only path
+distinct from the released installation and record its exact commit:
 
 ```bash
 git clone --branch main --depth 1 \

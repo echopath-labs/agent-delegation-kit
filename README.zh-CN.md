@@ -15,8 +15,8 @@ executor，同时由协调 Codex 保留范围、证据审查、风险判断和�
 
 ## 发布状态
 
-- Public source 版本：**0.1.2 source candidate**（`v0.1.2` 尚未发布）。
-- 最新已发布版本：**v0.1.1**。
+- Public source 版本：**0.1.2 Public Preview**。
+- 最新已发布版本：**v0.1.2**。
 - 支持状态：`codex-codex` 是 `public-preview`；`codex-pi` 保持
   `experimental`、inactive。
 
@@ -30,18 +30,16 @@ Node.js 20 或更高版本、Git、Codex CLI 0.147.0 或更高版本，并且
 某个版本的精确候选通过公开 CI 后才声明该版本通过 Ubuntu 验证。暂不声明支持
 Windows。
 
-## 用 0.1.2 source candidate 在五分钟内开始
+## 用 v0.1.2 release 在五分钟内开始
 
-使用这个 development-only 路径审查尚未发布的 hotfix candidate。`main`
-checkout 可变，因此不是可复现的 release 安装。
+使用版本化 `v0.1.2` tag 完成可复现的 release 安装。
 
 把下面的提示词交给一个协调 Codex：
 
 ```text
-请从 main 分支克隆 https://github.com/echopath-labs/relaypact 到目标仓库之外的
-本地工具目录。把它视为尚未发布的 0.1.2 source candidate，而不是版本化
-release。记录精确 checkout commit，并确认 package.json 和 plugin.json 都报告
-0.1.2。
+请把 https://github.com/echopath-labs/relaypact 的版本化 v0.1.2 release tag
+克隆到目标仓库之外的本地工具目录。记录精确 checkout commit，将它与 peel 后的
+v0.1.2 tag commit 做精确比较，并确认 package.json 和 plugin.json 都报告 0.1.2。
 读取 README.md 与最近的 AGENTS.md。验证 Node.js 20 或更高版本、Git、
 Codex CLI 0.147.0 或更高版本和 `codex exec --help`。通过 local marketplace
 安装根 Agent Plugin，不启动 worker，然后运行安装后 Skill-local 的 `support`
@@ -50,13 +48,15 @@ Codex-to-Codex readiness 和剩余配置。不要读取凭据，也不要配置�
 apply、commit、push、tag、publish、release 或 deploy 任何内容。
 ```
 
-等价的 source 命令是：
+等价的 release 命令是：
 
 ```bash
-git clone --branch main --depth 1 \
-  https://github.com/echopath-labs/relaypact.git relaypact-0.1.2-source
-cd relaypact-0.1.2-source
-git rev-parse HEAD
+git clone --branch v0.1.2 --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.2
+checkout_commit="$(git -C relaypact-v0.1.2 rev-parse HEAD)"
+release_commit="$(git -C relaypact-v0.1.2 rev-parse 'v0.1.2^{}')"
+test "$checkout_commit" = "$release_commit"
+cd relaypact-v0.1.2
 node -e 'const p=require("./package.json"),q=require("./plugin.json"); if(p.version!=="0.1.2"||q.version!==p.version) process.exit(1)'
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
@@ -69,17 +69,17 @@ codex plugin list --marketplace relaypact-local --json
 
 ## 安装最新已发布版本
 
-最新已发布版本是 `v0.1.1`：
+最新已发布版本是 `v0.1.2`：
 
-此前的 `v0.1.0` release 仍可用于精确的历史版本安装。
+此前的 `v0.1.1` 与 `v0.1.0` release 仍可用于精确的历史版本安装。
 
 ```bash
-git clone --branch v0.1.1 --depth 1 \
-  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.1
-checkout_commit="$(git -C relaypact-v0.1.1 rev-parse HEAD)"
-release_commit="$(git -C relaypact-v0.1.1 rev-parse 'v0.1.1^{}')"
+git clone --branch v0.1.2 --depth 1 \
+  https://github.com/echopath-labs/relaypact.git relaypact-v0.1.2
+checkout_commit="$(git -C relaypact-v0.1.2 rev-parse HEAD)"
+release_commit="$(git -C relaypact-v0.1.2 rev-parse 'v0.1.2^{}')"
 test "$checkout_commit" = "$release_commit"
-cd relaypact-v0.1.1
+cd relaypact-v0.1.2
 codex plugin marketplace add "$PWD" --json
 codex plugin add relaypact@relaypact-local --json
 codex plugin list --marketplace relaypact-local --json
@@ -88,8 +88,8 @@ codex plugin list --marketplace relaypact-local --json
 官方仓库 tag 只是版本选择器，**不是独立的密码学保证**。只有通过另一个可信渠道
 获得完整 commit SHA 时才做独立精确比对。
 
-`v0.1.2` 尚未发布，也不声称存在 v0.1.2 tag 安装。必须把 source candidate
-与已发布安装明确分开，并记录精确 commit：
+如需 dogfood 可变的当前源码，应把 development-only 路径与 release 安装明确
+分开，并记录精确 commit：
 
 ```bash
 git clone --branch main --depth 1 \
