@@ -8,7 +8,8 @@ import {
   collectGitState,
   enforceDirtyTreePolicy,
   getCommittedDiffPaths,
-  resolveRepository
+  resolveRepository,
+  snapshotGitIndex
 } from "../../core/src/git.mjs";
 import { evaluatePathScope } from "../../contracts/src/path-policy.mjs";
 import { changedFilesystemPaths, snapshotFilesystem, snapshotGitControls } from "../../core/src/filesystem-evidence.mjs";
@@ -125,18 +126,20 @@ async function inspectChangedFilesForSensitiveValues(repositoryRoot, changedPath
   return null;
 }
 
-async function collectPostflight(repository, before, filesystemBefore, gitControlsBefore) {
-  const [after, filesystemAfter, gitControlsAfter] = await Promise.all([
+async function collectPostflight(repository, before, filesystemBefore, gitControlsBefore, gitIndexBefore) {
+  const [after, filesystemAfter, gitControlsAfter, gitIndexAfter] = await Promise.all([
     collectGitState(repository.gitRoot),
     snapshotFilesystem(repository.gitRoot, { exclude: [".git"] }),
-    snapshotGitControls(repository.gitRoot)
+    snapshotGitControls(repository.gitRoot, { excludeIndexes: true }),
+    snapshotGitIndex(repository.gitRoot)
   ]);
   const committedPaths = await getCommittedDiffPaths(repository.gitRoot, before.head, after.head);
   return {
     after,
     committedPaths,
     filesystemPaths: changedFilesystemPaths(filesystemBefore, filesystemAfter),
-    gitControlsChanged: gitControlsBefore.fingerprint !== gitControlsAfter.fingerprint
+    gitControlsChanged: gitControlsBefore.fingerprint !== gitControlsAfter.fingerprint ||
+      gitIndexBefore.fingerprint !== gitIndexAfter.fingerprint
   };
 }
 
@@ -148,9 +151,10 @@ export async function runDelegation(input, options = {}) {
   const repository = await resolveRepository(envelope.repository);
   const before = await collectGitState(repository.gitRoot);
   enforceDirtyTreePolicy(before, envelope.repository.dirtyTree);
-  const [filesystemBefore, gitControlsBefore] = await Promise.all([
+  const [filesystemBefore, gitControlsBefore, gitIndexBefore] = await Promise.all([
     snapshotFilesystem(repository.gitRoot, { exclude: [".git"] }),
-    snapshotGitControls(repository.gitRoot)
+    snapshotGitControls(repository.gitRoot, { excludeIndexes: true }),
+    snapshotGitIndex(repository.gitRoot)
   ]);
 
   const executor = await runExecutor(envelope, {
@@ -163,7 +167,7 @@ export async function runDelegation(input, options = {}) {
     ...validationSensitiveValues
   ])];
 
-  let postflight = await collectPostflight(repository, before, filesystemBefore, gitControlsBefore);
+  let postflight = await collectPostflight(repository, before, filesystemBefore, gitControlsBefore, gitIndexBefore);
   let after = postflight.after;
   let changedPaths = mergePaths(after.dirtyPaths, postflight.committedPaths, postflight.filesystemPaths);
   const baselinePathEvidence = sanitizeChangedPathEvidence(
@@ -199,7 +203,7 @@ export async function runDelegation(input, options = {}) {
       validationEnv,
       redactionValues: evidenceSensitiveValues
     });
-    postflight = await collectPostflight(repository, before, filesystemBefore, gitControlsBefore);
+    postflight = await collectPostflight(repository, before, filesystemBefore, gitControlsBefore, gitIndexBefore);
     after = postflight.after;
     changedPaths = mergePaths(after.dirtyPaths, postflight.committedPaths, postflight.filesystemPaths);
     pathEvidence = sanitizeChangedPathEvidence(changedPaths, executorSecurity, validationSensitiveValues);

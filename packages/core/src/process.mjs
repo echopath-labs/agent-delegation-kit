@@ -4,7 +4,7 @@ const MAX_CAPTURE_BYTES = 128 * 1024;
 const DEFAULT_TERMINATION_GRACE_MS = 1000;
 const DEFAULT_HARD_SETTLE_GRACE_MS = 1000;
 
-function capture(maxBytes) {
+function capture(maxBytes, encoding) {
   const chunks = [];
   let bytes = 0;
   let truncated = false;
@@ -24,7 +24,8 @@ function capture(maxBytes) {
       }
     },
     result() {
-      return { value: Buffer.concat(chunks, bytes).toString("utf8"), truncated };
+      const value = Buffer.concat(chunks, bytes);
+      return { value: encoding === null ? value : value.toString(encoding), truncated };
     }
   };
 }
@@ -51,7 +52,8 @@ export function runProcess(command, args, options = {}) {
     maxCaptureBytes = MAX_CAPTURE_BYTES,
     terminationGraceMs = DEFAULT_TERMINATION_GRACE_MS,
     hardSettleGraceMs = DEFAULT_HARD_SETTLE_GRACE_MS,
-    processGroup = process.platform !== "win32"
+    processGroup = process.platform !== "win32",
+    outputEncoding = "utf8"
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -63,8 +65,8 @@ export function runProcess(command, args, options = {}) {
       stdio: ["pipe", "pipe", "pipe"]
     });
 
-    const stdoutCapture = capture(maxCaptureBytes);
-    const stderrCapture = capture(maxCaptureBytes);
+    const stdoutCapture = capture(maxCaptureBytes, outputEncoding);
+    const stderrCapture = capture(maxCaptureBytes, outputEncoding);
     let timedOut = false;
     let hardKilled = false;
     let groupCleanupAttempted = false;

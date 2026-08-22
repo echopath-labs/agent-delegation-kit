@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, appendFile, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, mkdtemp, readFile, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import { archiveAndCleanupTerminalTask, recordTerminalDecision } from "../packages/host-codex/src/actions.mjs";
 import { executeCodexDelegation, prepareCodexDelegation } from "../packages/adapter-codex-codex/src/controller.mjs";
 import { buildHostReviewPacket, extractAggregateMetrics, persistPendingReview } from "../packages/host-codex/src/review.mjs";
 import { authorizeCorrection, readTaskState } from "../packages/executor-codex/src/state.mjs";
+import { snapshotGitIndex } from "../packages/core/src/git.mjs";
 import { createGitRepository, makeEnvelope } from "./helpers.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const profileRegistry = {
   schemaVersion: "1.0.0",
@@ -493,6 +498,34 @@ test("terminal host decision archives review evidence before task-scoped cleanup
   assert.match(await readFile(archive.patchPath, "utf8"), /accepted change/);
   await assert.rejects(access(fixture.prepared.capsule.taskRoot));
   await access(fixture.root);
+});
+
+test("terminal acceptance tolerates a private index stat-cache refresh", async () => {
+  const fixture = await executeFixture();
+  await writeFile(path.join(fixture.prepared.capsule.capsuleRoot, "allowed.txt"), "accepted change\n");
+  const review = await buildHostReviewPacket(fixture.prepared, fixture.execution);
+  const indexPath = path.join(fixture.prepared.capsule.gitControl.gitDir, "index");
+  const rawBefore = await readFile(indexPath);
+  const semanticBefore = await snapshotGitIndex(
+    fixture.prepared.capsule.capsuleRoot,
+    fixture.prepared.capsule.gitControl
+  );
+  const refreshedAt = new Date("2001-01-01T00:00:00.000Z");
+  await utimes(path.join(fixture.prepared.capsule.capsuleRoot, "README.md"), refreshedAt, refreshedAt);
+  await execFileAsync("git", [
+    `--git-dir=${fixture.prepared.capsule.gitControl.gitDir}`,
+    `--work-tree=${fixture.prepared.capsule.gitControl.workTree}`,
+    "update-index",
+    "--refresh"
+  ], { cwd: fixture.prepared.capsule.capsuleRoot });
+  assert.notDeepEqual(await readFile(indexPath), rawBefore);
+  const semanticAfter = await snapshotGitIndex(
+    fixture.prepared.capsule.capsuleRoot,
+    fixture.prepared.capsule.gitControl
+  );
+  assert.equal(semanticAfter.fingerprint, semanticBefore.fingerprint);
+  const decided = await recordTerminalDecision(fixture.prepared, review, "accept", "desktop-host-1");
+  assert.equal(decided.packet.acceptance.status, "accepted");
 });
 
 test("acceptance refuses candidate changes made after host review", async () => {

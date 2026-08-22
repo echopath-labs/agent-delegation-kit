@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 const CANONICAL_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 const PROJECT_NAME = "relaypact";
 const PROJECT_DISPLAY_NAME = "RelayPact";
-const PROJECT_VERSION = "0.1.1";
+const PROJECT_VERSION = "0.1.2";
 const PROJECT_RELEASE_STATE = "released";
-const LATEST_PUBLISHED_VERSION = "0.1.0";
+const LATEST_PUBLISHED_VERSION = "0.1.1";
 const PROJECT_LICENSE = "Apache-2.0";
 const PROJECT_REPOSITORY = "https://github.com/echopath-labs/relaypact";
 const PROJECT_MARKETPLACE = "relaypact-local";
@@ -146,8 +146,8 @@ async function validateProjectOnboarding(root, errors) {
 
   const sharedReadmeFacts = [
     PROJECT_DISPLAY_NAME, PROJECT_REPOSITORY, PROJECT_MARKETPLACE,
-    "0.1.1", "codex-codex", "public-preview", "Codex CLI 0.147.0",
-    "Node.js 20", "Apache License 2.0", "SECURITY.md", "v0.1.1",
+    "0.1.2", "codex-codex", "public-preview", "Codex CLI 0.147.0",
+    "Node.js 20", "Apache License 2.0", "SECURITY.md", "v0.1.2", "v0.1.1",
     "v0.1.0", "docs/manual-configuration.md", "codex exec --help", "doctor",
     "`completed` != `accept` != `apply`"
   ];
@@ -177,7 +177,7 @@ async function validateProjectOnboarding(root, errors) {
   const sharedQuickStartFacts = [
     "$relaypact", "manual-configuration.md", "opencode-go-luna.md", "accept",
     "reject", "abandon", "Apache License 2.0", "codex exec", "doctor",
-    "v0.1.1", "v0.1.0", "patch", "commit SHA",
+    "v0.1.2", "v0.1.1", "patch", "commit SHA",
     "git clone --branch main --depth 1", "docs/relaypact-first-delegation.md",
     "`completed` != `accept` != `apply`", "relaypactDeclaredInputBytes"
   ];
@@ -208,7 +208,7 @@ async function validateProjectOnboarding(root, errors) {
   ], "skills/relaypact/references/agent-setup.md", errors);
 
   requireText(files["docs/manual-configuration.md"], [
-    "0.1.1", "v0.1.1", "v0.1.0", "doctor", "needs_setup", "codex exec --help",
+    "0.1.2", "v0.1.2", "v0.1.1", "doctor", "needs_setup", "codex exec --help",
     "Release state and version verification", "git clone --branch main --depth 1",
     "Apply an accepted candidate separately", "Upgrade or replace an installation",
     "## Uninstall", "private archives", "additional tokens", "## Glossary",
@@ -217,8 +217,8 @@ async function validateProjectOnboarding(root, errors) {
     "`completed` != `accept` != `apply`", "relaypactDeclaredInputBytes"
   ], "docs/manual-configuration.md", errors);
   requireText(files["RELEASING.md"], [
-    "0.1.1 release-time documentation closeout", "PROJECT_RELEASE_STATE",
-    "chasechou007", "human-supplied release date", "v0.1.1^{}",
+    "0.1.2 release-time documentation closeout", "PROJECT_RELEASE_STATE",
+    "chasechou007", "human-supplied release date", "v0.1.2^{}",
     "GitHub Release is visible before changing live `main`"
   ], "RELEASING.md", errors);
 
@@ -232,24 +232,24 @@ async function validateProjectOnboarding(root, errors) {
   if (PROJECT_RELEASE_STATE === "candidate") {
     for (const relative of candidateOnboardingFiles) {
       requireText(files[relative], ["source candidate", `v${LATEST_PUBLISHED_VERSION}`], relative, errors);
-      forbidText(files[relative], ["git clone --branch v0.1.1"], relative, errors);
+      forbidText(files[relative], ["git clone --branch v0.1.2"], relative, errors);
     }
     requireText(files["README.md"], [
-      "Latest published release: **v0.1.0**",
-      "`v0.1.1` is not released"
+      "Latest published release: **v0.1.1**",
+      "`v0.1.2` is not released"
     ], "README.md", errors);
     requireText(files["README.zh-CN.md"], [
-      "最新已发布版本：**v0.1.0**",
-      "`v0.1.1` 尚未发布"
+      "最新已发布版本：**v0.1.1**",
+      "`v0.1.2` 尚未发布"
     ], "README.zh-CN.md", errors);
   } else if (PROJECT_RELEASE_STATE === "released") {
     for (const relative of candidateOnboardingFiles) {
       requireText(files[relative], [
-        "git clone --branch v0.1.1",
-        "v0.1.1^{}"
+        "git clone --branch v0.1.2",
+        "v0.1.2^{}"
       ], relative, errors);
     }
-    requireText(files["README.md"], ["Latest published release: **v0.1.1**"], "README.md", errors);
+    requireText(files["README.md"], ["Latest published release: **v0.1.2**"], "README.md", errors);
   } else {
     errors.push("scripts/validate-package.mjs PROJECT_RELEASE_STATE must be candidate or released.");
   }

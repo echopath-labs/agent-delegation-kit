@@ -2,7 +2,7 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateTaskEnvelope } from "../../contracts/src/envelope.mjs";
-import { collectGitState, enforceDirtyTreePolicy, resolveRepository } from "../../core/src/git.mjs";
+import { assertGitIndexSnapshot, collectGitState, enforceDirtyTreePolicy, resolveRepository } from "../../core/src/git.mjs";
 import { DelegationError } from "../../contracts/src/errors.mjs";
 import { assertFilesystemSnapshot } from "../../core/src/filesystem-evidence.mjs";
 import { cleanupCapsule, getPrivateControlChanges, prepareCapsule, verifyContextManifestIdentity, verifySourceUnchanged } from "../../executor-codex/src/capsule.mjs";
@@ -166,9 +166,6 @@ export async function loadCodexDelegation(taskRootInput, profileRegistry) {
   if (privateControlBaseline.fingerprint !== state.privateControlFingerprint) {
     throw new DelegationError("task_state_mismatch", "Stored private control evidence no longer matches lifecycle state.");
   }
-  if ((await getPrivateControlChanges({ taskRoot, privateControlBaselinePath, privateControlBaseline })).length > 0) {
-    throw new DelegationError("task_state_mismatch", "Stored immutable private controls changed after task preparation.");
-  }
   if (marker.taskId !== state.taskId || state.taskId !== envelope.taskId) {
     throw new DelegationError("task_state_mismatch", "Task marker, lifecycle state, and envelope identities do not match.");
   }
@@ -220,6 +217,8 @@ export async function loadCodexDelegation(taskRootInput, profileRegistry) {
     capsuleFilesystemBaselinePath: path.join(controlRoot, "capsule-filesystem-baseline.json"),
     sourceFilesystemBaselinePath: path.join(controlRoot, "source-filesystem-baseline.json"),
     sourceGitControlBaselinePath,
+    capsuleGitIndexBaselinePath: path.join(controlRoot, "git-index-baseline.json"),
+    sourceGitIndexBaselinePath: path.join(controlRoot, "source-git-index-baseline.json"),
     privateControlBaselinePath,
     sourceHead: marker.sourceHead,
     sourceStatus: marker.sourceStatus,
@@ -229,13 +228,24 @@ export async function loadCodexDelegation(taskRootInput, profileRegistry) {
   capsule.capsuleFilesystemBaseline = assertFilesystemSnapshot(JSON.parse(await readFile(capsule.capsuleFilesystemBaselinePath, "utf8")));
   capsule.sourceFilesystemBaseline = assertFilesystemSnapshot(JSON.parse(await readFile(capsule.sourceFilesystemBaselinePath, "utf8")));
   capsule.sourceGitControlBaseline = sourceGitControlBaseline;
+  try {
+    capsule.capsuleGitIndexBaseline = assertGitIndexSnapshot(JSON.parse(await readFile(capsule.capsuleGitIndexBaselinePath, "utf8")));
+    capsule.sourceGitIndexBaseline = assertGitIndexSnapshot(JSON.parse(await readFile(capsule.sourceGitIndexBaselinePath, "utf8")));
+  } catch {
+    throw new DelegationError("task_state_mismatch", "Stored semantic Git index evidence is missing or malformed.");
+  }
   capsule.privateControlBaseline = privateControlBaseline;
   if (
     capsule.capsuleFilesystemBaseline.fingerprint !== marker.capsuleFilesystemFingerprint ||
     capsule.sourceFilesystemBaseline.fingerprint !== marker.sourceFilesystemFingerprint ||
-    capsule.sourceGitControlBaseline.fingerprint !== marker.sourceGitControlFingerprint
+    capsule.sourceGitControlBaseline.fingerprint !== marker.sourceGitControlFingerprint ||
+    capsule.capsuleGitIndexBaseline.fingerprint !== marker.capsuleGitIndexFingerprint ||
+    capsule.sourceGitIndexBaseline.fingerprint !== marker.sourceGitIndexFingerprint
   ) {
     throw new DelegationError("task_state_mismatch", "Stored filesystem evidence no longer matches the task marker.");
+  }
+  if ((await getPrivateControlChanges(capsule)).length > 0) {
+    throw new DelegationError("task_state_mismatch", "Stored immutable private controls changed after task preparation.");
   }
   await verifyContextManifestIdentity(capsule, contextManifestFingerprint);
   const contextManifest = contextManifestFingerprint

@@ -242,6 +242,15 @@ test("task reload rejects immutable private-control drift", async () => {
   );
 });
 
+test("task reload rejects legacy state without a semantic Git index baseline", async () => {
+  const prepared = await preparedFixture();
+  await rm(prepared.capsule.capsuleGitIndexBaselinePath);
+  await assert.rejects(
+    loadCodexDelegation(prepared.capsule.taskRoot, profileRegistry),
+    (error) => error.code === "task_state_mismatch" && /semantic Git index evidence/.test(error.message)
+  );
+});
+
 test("controller executes and resumes correction in the same delegated session", async () => {
   const prepared = await preparedFixture();
   const first = await executeCodexDelegation(prepared, {

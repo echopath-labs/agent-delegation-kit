@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, readdir, realpath, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, symlink, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,13 +9,14 @@ import { promisify } from "node:util";
 import {
   cleanupCapsule,
   collectCandidateEvidence,
+  getPrivateControlChanges,
   prepareCapsule,
   preflightCapsule,
   verifyContextManifestIdentity,
   verifySourceUnchanged
 } from "../packages/executor-codex/src/capsule.mjs";
 import { validateTaskEnvelope } from "../packages/contracts/src/envelope.mjs";
-import { resolveRepository } from "../packages/core/src/git.mjs";
+import { resolveRepository, snapshotGitIndex } from "../packages/core/src/git.mjs";
 import { createDirectory, createGitRepository, makeEnvelope } from "./helpers.mjs";
 
 const workerResultSchemaPath = fileURLToPath(new URL("../packages/contracts/schemas/codex-worker-result.schema.json", import.meta.url));
@@ -228,6 +229,41 @@ test("candidate patch uses a clean host index and reports authoritative index dr
   assert.ok(evidence.scopeBreaches.includes("task:private control changed"));
   assert.match(evidence.candidatePatch, /changed despite index flag/);
   assert.doesNotMatch(evidence.scopeBreaches.join("\n"), /candidate patch incomplete/);
+});
+
+test("private index stat-cache refresh does not count as control tampering", async () => {
+  const fixture = await setup();
+  const capsule = await prepareCapsule({ ...fixture, profile, workerResultSchemaPath });
+  const indexPath = path.join(capsule.gitControl.gitDir, "index");
+  const before = await readFile(indexPath);
+  const semanticBefore = await snapshotGitIndex(capsule.capsuleRoot, capsule.gitControl);
+  const refreshedAt = new Date("2001-01-01T00:00:00.000Z");
+  await utimes(path.join(capsule.capsuleRoot, "README.md"), refreshedAt, refreshedAt);
+  await execFileAsync("git", [
+    `--git-dir=${capsule.gitControl.gitDir}`,
+    `--work-tree=${capsule.gitControl.workTree}`,
+    "update-index",
+    "--refresh"
+  ], { cwd: capsule.capsuleRoot });
+  const after = await readFile(indexPath);
+  const semanticAfter = await snapshotGitIndex(capsule.capsuleRoot, capsule.gitControl);
+  assert.notDeepEqual(after, before, "fixture must rewrite only raw index stat-cache bytes");
+  assert.equal(semanticAfter.fingerprint, semanticBefore.fingerprint);
+  assert.deepEqual(await getPrivateControlChanges(capsule), []);
+});
+
+test("source index integrity ignores stat cache but rejects semantic flags", async () => {
+  const fixture = await setup();
+  const capsule = await prepareCapsule({ ...fixture, profile, workerResultSchemaPath });
+  const sourceFile = path.join(fixture.root, "README.md");
+  const refreshedAt = new Date(Date.now() + 60_000);
+  await utimes(sourceFile, refreshedAt, refreshedAt);
+  await execFileAsync("git", ["update-index", "--refresh"], { cwd: fixture.root });
+  assert.equal((await verifySourceUnchanged(fixture.repository, capsule)).unchanged, true);
+  await execFileAsync("git", ["update-index", "--assume-unchanged", "README.md"], { cwd: fixture.root });
+  const tampered = await verifySourceUnchanged(fixture.repository, capsule);
+  assert.equal(tampered.unchanged, false);
+  assert.ok(tampered.gitControlPaths.includes("index"));
 });
 
 test("candidate evidence omits a patch containing an exact granted credential", async () => {

@@ -20,7 +20,7 @@ import { assertContextManifestIdentity, planDelegationContext } from "../../core
 import { minimalEnvironment } from "../../core/src/environment.mjs";
 import { DelegationError } from "../../contracts/src/errors.mjs";
 import { assertFilesystemSnapshot, changedFilesystemPaths, snapshotFilesystem, snapshotGitControls } from "../../core/src/filesystem-evidence.mjs";
-import { getCommittedDiffPaths, getHead, getStatusPaths } from "../../core/src/git.mjs";
+import { assertGitIndexSnapshot, getCommittedDiffPaths, getHead, getStatusPaths, snapshotGitIndex } from "../../core/src/git.mjs";
 import { evaluatePathScope, globToRegExp, normalizeRelativePath } from "../../contracts/src/path-policy.mjs";
 import { runProcess } from "../../core/src/process.mjs";
 import { containsExactSensitiveValue } from "../../core/src/redact.mjs";
@@ -35,6 +35,8 @@ const MAX_GIT_LINK_BYTES = 256 * 1024;
 const CAPSULE_FILESYSTEM_BASELINE = "capsule-filesystem-baseline.json";
 const SOURCE_FILESYSTEM_BASELINE = "source-filesystem-baseline.json";
 const SOURCE_GIT_CONTROL_BASELINE = "source-git-control-baseline.json";
+const SOURCE_GIT_INDEX_BASELINE = "source-git-index-baseline.json";
+const PRIVATE_GIT_INDEX_BASELINE = "git-index-baseline.json";
 const PRIVATE_CONTROL_BASELINE = "private-control-baseline.json";
 export const IMMUTABLE_PRIVATE_CONTROL_PATHS = [
   "capsule.json",
@@ -44,9 +46,10 @@ export const IMMUTABLE_PRIVATE_CONTROL_PATHS = [
   "control/capsule-filesystem-baseline.json",
   "control/source-filesystem-baseline.json",
   "control/source-git-control-baseline.json",
+  "control/source-git-index-baseline.json",
+  "control/git-index-baseline.json",
   "control/git/HEAD",
   "control/git/config",
-  "control/git/index",
   "control/git/packed-refs",
   "control/git/refs",
   "control/git/info",
@@ -450,17 +453,29 @@ export async function prepareCapsule(options) {
     await rm(taskRoot, { recursive: true, force: true });
     throw error;
   }
-  const [capsuleFilesystemBaseline, sourceFilesystemBaseline, sourceGitControlBaseline] = await Promise.all([
+  const [
+    capsuleFilesystemBaseline,
+    sourceFilesystemBaseline,
+    sourceGitControlBaseline,
+    capsuleGitIndexBaseline,
+    sourceGitIndexBaseline
+  ] = await Promise.all([
     snapshotFilesystem(prepared.capsuleRoot, { exclude: [".git"] }),
     snapshotFilesystem(options.repository.gitRoot, { exclude: [".git"] }),
-    snapshotGitControls(options.repository.gitRoot)
+    snapshotGitControls(options.repository.gitRoot, { excludeIndexes: true }),
+    snapshotGitIndex(prepared.capsuleRoot, prepared.gitControl),
+    snapshotGitIndex(options.repository.gitRoot)
   ]);
   const capsuleFilesystemBaselinePath = path.join(control.controlRoot, CAPSULE_FILESYSTEM_BASELINE);
   const sourceFilesystemBaselinePath = path.join(control.controlRoot, SOURCE_FILESYSTEM_BASELINE);
   const sourceGitControlBaselinePath = path.join(control.controlRoot, SOURCE_GIT_CONTROL_BASELINE);
+  const capsuleGitIndexBaselinePath = path.join(control.controlRoot, PRIVATE_GIT_INDEX_BASELINE);
+  const sourceGitIndexBaselinePath = path.join(control.controlRoot, SOURCE_GIT_INDEX_BASELINE);
   await writeFile(capsuleFilesystemBaselinePath, `${JSON.stringify(capsuleFilesystemBaseline)}\n`, { flag: "wx", mode: 0o600 });
   await writeFile(sourceFilesystemBaselinePath, `${JSON.stringify(sourceFilesystemBaseline)}\n`, { flag: "wx", mode: 0o600 });
   await writeFile(sourceGitControlBaselinePath, `${JSON.stringify(sourceGitControlBaseline)}\n`, { flag: "wx", mode: 0o600 });
+  await writeFile(capsuleGitIndexBaselinePath, `${JSON.stringify(capsuleGitIndexBaseline)}\n`, { flag: "wx", mode: 0o600 });
+  await writeFile(sourceGitIndexBaselinePath, `${JSON.stringify(sourceGitIndexBaseline)}\n`, { flag: "wx", mode: 0o600 });
   const inputMetadata = preflight.inputs.map(({ relative, mode, sha256, bytes }) => ({ path: relative, mode, sha256, bytes }));
   const marker = {
     schemaVersion: "1.0.0",
@@ -478,7 +493,9 @@ export async function prepareCapsule(options) {
     gitLinkSha256: prepared.gitLinkSha256 ?? null,
     capsuleFilesystemFingerprint: capsuleFilesystemBaseline.fingerprint,
     sourceFilesystemFingerprint: sourceFilesystemBaseline.fingerprint,
-    sourceGitControlFingerprint: sourceGitControlBaseline.fingerprint
+    sourceGitControlFingerprint: sourceGitControlBaseline.fingerprint,
+    capsuleGitIndexFingerprint: capsuleGitIndexBaseline.fingerprint,
+    sourceGitIndexFingerprint: sourceGitIndexBaseline.fingerprint
   };
   const markerPath = path.join(taskRoot, "capsule.json");
   await writeFile(markerPath, `${JSON.stringify(marker, null, 2)}\n`, { mode: 0o600 });
@@ -506,6 +523,10 @@ export async function prepareCapsule(options) {
     sourceFilesystemBaselinePath,
     sourceGitControlBaseline,
     sourceGitControlBaselinePath,
+    capsuleGitIndexBaseline,
+    capsuleGitIndexBaselinePath,
+    sourceGitIndexBaseline,
+    sourceGitIndexBaselinePath,
     privateControlBaseline,
     privateControlBaselinePath,
     inputMetadata
@@ -546,6 +567,19 @@ export async function getPrivateControlChanges(capsule) {
   const current = await snapshotFilesystem(capsule.taskRoot, {
     selectedPaths: IMMUTABLE_PRIVATE_CONTROL_PATHS
   });
+  let gitIndexBaseline;
+  try {
+    const persistedIndex = assertGitIndexSnapshot(JSON.parse(await readFile(capsule.capsuleGitIndexBaselinePath, "utf8")));
+    gitIndexBaseline = capsule.capsuleGitIndexBaseline
+      ? assertGitIndexSnapshot(capsule.capsuleGitIndexBaseline)
+      : persistedIndex;
+    if (gitIndexBaseline.fingerprint !== persistedIndex.fingerprint) changes.push("control/git-index-baseline.json");
+  } catch (error) {
+    if (error instanceof DelegationError) throw error;
+    throw new DelegationError("git_index_evidence_invalid", "Private Git index baseline is missing or malformed.");
+  }
+  const currentIndex = await snapshotGitIndex(capsule.capsuleRoot, capsule.gitControl);
+  if (currentIndex.fingerprint !== gitIndexBaseline.fingerprint) changes.push("control/git/index");
   return [...new Set([...changes, ...changedFilesystemPaths(baseline, current)])].sort();
 }
 
@@ -737,11 +771,21 @@ export async function verifySourceUnchanged(repository, capsule) {
     if (error instanceof DelegationError) throw error;
     throw new DelegationError("filesystem_evidence_invalid", "Source Git-control baseline is missing or malformed.");
   }
-  const [head, statusPaths, currentFilesystem, currentGitControls] = await Promise.all([
+  let gitIndexBaseline;
+  try {
+    gitIndexBaseline = capsule.sourceGitIndexBaseline
+      ? assertGitIndexSnapshot(capsule.sourceGitIndexBaseline)
+      : assertGitIndexSnapshot(JSON.parse(await readFile(capsule.sourceGitIndexBaselinePath, "utf8")));
+  } catch (error) {
+    if (error instanceof DelegationError) throw error;
+    throw new DelegationError("git_index_evidence_invalid", "Source Git index baseline is missing or malformed.");
+  }
+  const [head, statusPaths, currentFilesystem, currentGitControls, currentGitIndex] = await Promise.all([
     getHead(repository.gitRoot),
     getStatusPaths(repository.gitRoot),
     snapshotFilesystem(repository.gitRoot, { exclude: [".git"] }),
-    snapshotGitControls(repository.gitRoot)
+    snapshotGitControls(repository.gitRoot, { excludeIndexes: true }),
+    snapshotGitIndex(repository.gitRoot)
   ]);
   const filesystemPaths = changedFilesystemPaths(baseline, currentFilesystem);
   const sameStatus = JSON.stringify(statusPaths) === JSON.stringify(capsule.sourceStatus);
@@ -752,6 +796,7 @@ export async function verifySourceUnchanged(repository, capsule) {
     ? true
     : currentFingerprint === capsule.sourceStateFingerprint;
   const gitControlPaths = changedFilesystemPaths(gitControlBaseline, currentGitControls);
+  if (currentGitIndex.fingerprint !== gitIndexBaseline.fingerprint) gitControlPaths.push("index");
   return {
     unchanged: head === capsule.sourceHead && sameStatus && sameFingerprint && filesystemPaths.length === 0 && gitControlPaths.length === 0,
     head,
